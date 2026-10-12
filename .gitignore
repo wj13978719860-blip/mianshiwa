@@ -3,6 +3,10 @@
 
 HELP.md
 .runtime/
+**/__pycache__/
+**/.pytest_cache/
+**/.venv/
+*.pyc
 **/node_modules/
 **/.next/
 **/sentinel/

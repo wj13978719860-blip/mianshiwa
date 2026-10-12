@@ -2,9 +2,29 @@
 # @author <a href="https://github.com/liyupi">程序员鱼皮</a>
 # @from <a href="https://yupi.icu">编程导航知识星球</a>
 spring:
-  application:
-    name: mianshiya-next-backend
   cloud:
+    # 新增 naming 注册/发现与 AI 调用共用开关；原 nacos.config 配置监听在下方独立保留。
+    discovery:
+      enabled: ${ai.service.enabled:false}
+    service-registry:
+      auto-registration:
+        enabled: ${ai.service.enabled:false}
+    nacos:
+      discovery:
+        # naming 是服务地址发现，不是业务请求代理：Java 得到地址后直接 HTTP 调用 Python。
+        enabled: ${ai.service.enabled:false}
+        register-enabled: ${ai.service.enabled:false}
+        server-addr: ${NACOS_SERVER_ADDR:127.0.0.1:8848}
+        namespace: ${NACOS_NAMESPACE:}
+        group: ${NACOS_GROUP:DEFAULT_GROUP}
+        ip: ${BACKEND_REGISTER_IP:127.0.0.1}
+    loadbalancer:
+      # 不额外缓存实例，也不自动重发请求；Nacos 客户端本身仍维护订阅与发现缓存。
+      enabled: ${ai.service.enabled:false}
+      retry:
+        enabled: false
+      cache:
+        enabled: false
     sentinel:
       eager: true
       transport:
@@ -13,6 +33,8 @@ spring:
         # Sentinel 1.8.6 只接受 IP；此为容器内 host.docker.internal 的 IPv4。
         # Docker 网络不同的机器可通过环境变量覆盖。
         client-ip: ${SENTINEL_CLIENT_IP:192.168.65.254}
+  application:
+    name: mianshiya-next-backend
   # 默认 dev 环境
   profiles:
     active: dev
@@ -210,3 +232,24 @@ knife4j:
 # AI 大模型接入（目前是火山引擎 DeepSeek）
 ai:
   apiKey: ${AI_API_KEY:xxx}
+  service:
+    # 默认关闭；开启后会创建 AI Feign 客户端，并检查内部凭证是否存在。
+    enabled: ${AI_SERVICE_ENABLED:false}
+    # 双方共享的内部凭证，通过私有配置/环境变量提供，不传给浏览器。
+    token: ${AI_SERVICE_TOKEN:}
+    # 必须与 Python 在 Nacos 注册的服务名一致。
+    name: ${AI_SERVICE_NAME:mianshiya-ai-service}
+    # 探测接口的连接/读取超时，单位毫秒；未来模型接口需另设更合适的预算。
+    connect-timeout-ms: 2000
+    read-timeout-ms: 3000
+    # 真实生成等待预算；须大于 Python OPENAI_TIMEOUT_SECONDS 对应的毫秒数。
+    model-read-timeout-ms: 40000
+feign:
+  # 本次使用默认 HTTP 客户端；AI 专属凭证/超时/重试配置见 AiClientConfiguration。
+  httpclient:
+    enabled: false
+  okhttp:
+    enabled: false
+  sentinel:
+    # 本次 AI 探测尚未设计 Feign 的 Sentinel 熔断；原业务 Sentinel 规则仍按原方式运行。
+    enabled: false

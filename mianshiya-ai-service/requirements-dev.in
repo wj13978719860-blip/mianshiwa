@@ -1,0 +1,4 @@
+# 测试依赖包含全部运行依赖，再增加 HTTP 测试客户端和测试框架。
+# 修改后重新生成 requirements-dev.txt，不手工维护传递依赖及哈希。
+-r requirements.in
+pytest==8.3.5

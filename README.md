@@ -13,6 +13,7 @@ GitHub 仓库：https://github.com/wj13978719860-blip/mianshiwa
 - Elasticsearch 题目搜索与数据库同步；按题库筛选使用 MySQL。
 - 刷题签到与日历记录。
 - AI 生成题目和模拟面试，需配置火山引擎 Ark API Key 和可用模型。
+- 独立 Python AI 服务通信 MVP：Nacos 注册发现、OpenFeign 调用、管理员探测与故障恢复，暂不调用模型。
 - Redis 缓存、HotKey 热点识别、Sentinel 保护、Nacos 动态 IP 黑名单。
 
 ## 技术栈
@@ -21,12 +22,15 @@ GitHub 仓库：https://github.com/wj13978719860-blip/mianshiwa
 
 后端：Java 8、Spring Boot 2.7.2、MyBatis-Plus、Sa-Token、MySQL、Redis、Elasticsearch、Nacos、Sentinel、etcd 与 HotKey。
 
+独立 AI 服务：Python 3.11、FastAPI、Nacos；Java 使用 Spring Cloud OpenFeign 与 LoadBalancer 调用。
+
 ## 项目结构
 
 | 目录 | 内容 |
 | --- | --- |
 | `mianshiya-next-frontend` | 面试蛙前端 |
 | `mianshiya-next-backend` | 后端接口与数据库脚本 |
+| `mianshiya-ai-service` | 独立 AI 服务通信骨架与契约测试 |
 | `scripts` | 本地启动和依赖准备脚本 |
 | `docker` | 中间件构建文件与运行说明 |
 | `docs` | 本地配置检查与 AI 升级需求草案 |
@@ -64,6 +68,10 @@ $env:DB_PASSWORD='你的数据库密码'
 
 HotKey 服务还需准备本机 etcd、worker 和 dashboard，详见 [中间件说明](docker/README.md)。目前后端启用了这些连接；仅启动基础服务不能代表全部增强功能已就绪。[本地配置记录](docs/本地启动与配置检查.md)记录维护者机器的运行情况，并非所有机器的默认值。
 
+独立 AI 服务默认关闭。需要启用时，按 [AI 服务说明](mianshiya-ai-service/README.md) 准备 Python、私有凭证并使用 `./scripts/start-backend.ps1 -Build -EnableAiService`。本次 [实施与验收记录](docs/AI服务MVP实施与验收.md) 包含版本、故障实测与回退说明。
+
+独立服务已接入 OpenAI 兼容模型协议，Java 通过 Nacos/OpenFeign 调用 Python。管理员可在“管理 → AI 问答”页面输入问题并查看真实模型回答；模型配置与 Key 仅存放在本地私有文件中，见 [模型接入与验收](docs/AI模型接入-第一步验收.md)。此页面用于验证新服务，后续将以问镜为技术参考，替换现有 AI 模拟面试的流程和实现。
+
 ## 配置
 
 | 环境变量 | 用途 |
@@ -72,6 +80,7 @@ HotKey 服务还需准备本机 etcd、worker 和 dashboard，详见 [中间件�
 | `REDIS_PASSWORD` | 使用带认证的 Redis 时设置 |
 | `ES_PASSWORD` | 使用带认证的 ES 时设置 |
 | `AI_API_KEY` | 火山引擎 Ark API Key |
+| `OPENAI_BASE_URL` / `OPENAI_MODEL` / `OPENAI_API_KEY` | 独立 Python AI 服务的 OpenAI 兼容接口地址、模型名和私有 Key |
 | `COS_ACCESS_KEY` / `COS_SECRET_KEY` | 可选对象存储凭据 |
 | `WX_MP_SECRET` / `WX_MP_TOKEN` / `WX_OPEN_SECRET` | 可选微信功能凭据 |
 | `SENTINEL_CLIENT_IP` | Docker 控制台回连后端的宿主机 IPv4 |
@@ -80,7 +89,7 @@ MySQL 用户名、地址及可选模型、对象存储、微信参数仍需按�
 
 ## 当前限制
 
-- AI 升级需求仍是草案，Agentic RAG 尚未实现。
+- 独立 AI 服务已完成通信、真实模型调用和管理员交互页面；原模拟面试尚未替换，Agentic RAG、Harness 和动态面试流程尚未实现。
 - COS、微信以及遗留帖子模块未完成可用性验收。
 - Next.js 现有配置跳过 TypeScript 构建检查，构建成功不代表所有类型问题已解决。
 - Docker Compose 用于本地开发，不是生产部署方案。

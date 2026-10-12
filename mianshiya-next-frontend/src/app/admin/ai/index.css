@@ -1,0 +1,15 @@
+/* 页面宽度与间距适配桌面和手机，复用项目现有 Markdown 回答样式。 */
+#aiQuestionPage { max-width: 960px; margin: 0 auto; }
+#aiQuestionPage .ai-question-heading { margin-bottom: 20px; }
+#aiQuestionPage .ai-question-heading h2 { margin: 0; }
+#aiQuestionPage .ai-question-heading .anticon { font-size: 26px; color: #389e0d; }
+#aiQuestionPage .ai-question-heading .ant-typography-secondary { margin-top: 12px; }
+#aiQuestionPage .ai-question-examples { margin-top: 28px; }
+#aiQuestionPage .ai-question-actions { display: flex; margin-top: 20px; }
+#aiQuestionPage .ai-question-result { margin-top: 20px; }
+#aiQuestionPage .ai-submitted-question { background: #f6ffed; padding: 12px 16px; border-radius: 8px; white-space: pre-wrap; overflow-wrap: anywhere; }
+#aiQuestionPage .md-viewer { overflow-wrap: anywhere; }
+@media (max-width: 600px) {
+  #aiQuestionPage .ai-question-examples .ant-btn { height: auto; white-space: normal; text-align: left; }
+  #aiQuestionPage .ant-card-body { padding: 16px; }
+}

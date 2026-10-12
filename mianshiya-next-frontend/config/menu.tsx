@@ -27,6 +27,11 @@ export const menus = [
     access: ACCESS_ENUM.ADMIN,
     children: [
       {
+        path: "/admin/ai",
+        name: "AI 问答",
+        access: ACCESS_ENUM.ADMIN,
+      },
+      {
         path: "/admin/user",
         name: "用户管理",
         access: ACCESS_ENUM.ADMIN,

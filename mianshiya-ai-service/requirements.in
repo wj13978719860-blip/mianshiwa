@@ -1,0 +1,7 @@
+# 运行依赖的维护源：HTTP 框架、服务器和 Nacos 2.x 注册发现客户端。
+# 修改后通过 uv pip compile --generate-hashes 重新生成 requirements.txt。
+fastapi==0.115.12
+uvicorn==0.34.3
+nacos-sdk-python==2.0.11
+# OpenAI 兼容协议的异步 HTTP 连接池，不绑定具体供应商 SDK。
+httpx==0.28.1
