@@ -1,6 +1,6 @@
 import React from "react";
 import "./index.css";
-import { BRAND_NAME } from "@/constants/brand";
+import { BRAND_NAME, PROJECT_AUTHOR, PROJECT_GITHUB_URL } from "@/constants/brand";
 
 /**
  * 全局底部栏组件
@@ -13,8 +13,8 @@ export default function GlobalFooter() {
     <div className="global-footer">
       <div>© {currentYear} {BRAND_NAME}</div>
       <div>
-        <a href="https://www.code-nav.cn" target="_blank">
-          原项目来源：编程导航 - 程序员鱼皮
+        <a href={PROJECT_GITHUB_URL} target="_blank" rel="noopener noreferrer">
+          作者：{PROJECT_AUTHOR}
         </a>
       </div>
     </div>

@@ -1,5 +1,7 @@
 # 面试蛙前端
 
+维护者：[程序员条条](https://github.com/wj13978719860-blip/mianshiwa)
+
 品牌配置位于 `src/constants/brand.ts`，青蛙 Logo 位于 `public/assets/logo.svg`。默认以开发模式启动，内部目录名和 npm 包名保留 `mianshiya`。
 
 This is a [Next.js](https://nextjs.org/) project bootstrapped with [`create-next-app`](https://github.com/vercel/next.js/tree/canary/packages/create-next-app).

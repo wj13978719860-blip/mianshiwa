@@ -37,7 +37,7 @@ export default function UserCenterPage() {
             <Card.Meta
               title={
                 <Title level={4} style={{ marginBottom: 0 }}>
-                  {user.userName}
+                  {user.userName || (user.id ? `用户${user.id}` : "未登录")}
                 </Title>
               }
               description={

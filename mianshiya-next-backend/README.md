@@ -2,8 +2,7 @@
 
 基于下述 Spring Boot 教学模板扩展，内部包名和运行标识保留 `mianshiya`。
 
-> 作者：[程序员鱼皮](https://github.com/liyupi)
-> 项目维护者：[韦杰](https://github.com/wj13978719860-blip)
+> 维护者：[程序员条条](https://github.com/wj13978719860-blip/mianshiwa)
 
 基于 Java SpringBoot 的项目初始模板，整合了常用框架和主流业务的示例代码。
 

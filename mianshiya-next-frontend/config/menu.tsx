@@ -21,11 +21,6 @@ export const menus = [
     name: "AI 模拟面试",
   },
   {
-    name: "原版项目参考",
-    path: "https://mianshiya.com",
-    target: "_blank",
-  },
-  {
     path: "/admin",
     name: "管理",
     icon: <CrownOutlined />,

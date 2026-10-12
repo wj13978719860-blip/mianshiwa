@@ -16,7 +16,7 @@ import { setLoginUser } from "@/stores/loginUser";
 import { DEFAULT_USER } from "@/constants/user";
 import SearchInput from "@/layouts/BasicLayout/components/SearchInput";
 import "./index.css";
-import { BRAND_NAME, BRAND_LOGO, getBrandImage } from "@/constants/brand";
+import { BRAND_NAME, BRAND_LOGO, PROJECT_GITHUB_URL, getBrandImage } from "@/constants/brand";
 
 interface Props {
   children: React.ReactNode;
@@ -73,7 +73,7 @@ export default function BasicLayout({ children }: Props) {
         avatarProps={{
           src: getBrandImage(loginUser.userAvatar),
           size: "small",
-          title: loginUser.userName || "未登录",
+          title: loginUser.id ? loginUser.userName || `用户${loginUser.id}` : "未登录",
           render: (props, dom) => {
             if (!loginUser.id) {
               return (
@@ -122,8 +122,10 @@ export default function BasicLayout({ children }: Props) {
             <SearchInput key="search" />,
             <a
               key="github"
-              href="https://github.com/liyupi/mianshiya-next"
+              href={PROJECT_GITHUB_URL}
               target="_blank"
+              rel="noopener noreferrer"
+              aria-label="面试蛙 GitHub 仓库"
             >
               <GithubFilled key="GithubFilled" />
             </a>,

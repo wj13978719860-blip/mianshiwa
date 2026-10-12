@@ -1,6 +1,6 @@
 # 项目来源与第三方组件
 
-面试蛙由韦杰维护，基于程序员鱼皮的面试刷题教学项目修改。原代码中的作者署名保留。维护者于 2026-10-12 确认已取得公开源码授权；本仓库未替原作者或第三方组件新增再许可条款。
+面试蛙由程序员条条 / pickyo 维护，项目仓库：https://github.com/wj13978719860-blip/mianshiwa 。本项目基于程序员鱼皮的面试刷题教学项目修改，原代码中的作者署名保留。维护者于 2026-10-12 确认已取得公开源码授权；本仓库未替原作者或第三方组件新增再许可条款。
 
 - 原项目参考：https://github.com/liyupi/mianshiya-next
 - HotKey 官方源码：https://gitee.com/jd-platform-opensource/hotkey ，使用 `master-v0.0.4` 分支的 `f1c81819c7dcc7cf3421f556698e0fbebd244641` 提交。

@@ -1,6 +1,8 @@
 export const BRAND_NAME = "面试蛙";
 export const BRAND_DESCRIPTION = "程序员面试刷题与 AI 模拟面试平台";
 export const BRAND_LOGO = "/assets/logo.svg";
+export const PROJECT_GITHUB_URL = "https://github.com/wj13978719860-blip/mianshiwa";
+export const PROJECT_AUTHOR = "程序员条条 / pickyo";
 
 // Replace original seed images while keeping user-provided images.
 const LEGACY_IMAGES = new Set([
