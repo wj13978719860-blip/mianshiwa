@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="面试蛙">
+  <rect width="64" height="64" rx="16" fill="#ecfdf5"/>
+  <ellipse cx="32" cy="37" rx="25" ry="20" fill="#22c55e"/>
+  <circle cx="19" cy="22" r="12" fill="#22c55e"/>
+  <circle cx="45" cy="22" r="12" fill="#22c55e"/>
+  <circle cx="19" cy="22" r="8" fill="white"/>
+  <circle cx="45" cy="22" r="8" fill="white"/>
+  <circle cx="21" cy="23" r="4" fill="#14532d"/>
+  <circle cx="43" cy="23" r="4" fill="#14532d"/>
+  <path d="M20 39 Q32 51 44 39" fill="none" stroke="#14532d" stroke-width="3" stroke-linecap="round"/>
+  <ellipse cx="15" cy="37" rx="4" ry="2" fill="#86efac"/>
+  <ellipse cx="49" cy="37" rx="4" ry="2" fill="#86efac"/>
+</svg>

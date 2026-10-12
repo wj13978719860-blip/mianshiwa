@@ -1,0 +1,104 @@
+name: mianshiya
+
+# MySQL stays on the host. Redis uses 6380 to avoid the running host Redis.
+# This stack is for local development; ports are bound to loopback.
+services:
+  redis:
+    # Pin the locally available 7.2.15 image by digest.
+    image: redis:7.2-alpine@sha256:05a97a479bc73de66f087dc05b569010772880f778cc8671fa6b8aadee32e5c6
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6380:6379"
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  elasticsearch:
+    # Match Spring Boot 2.7.2's Elasticsearch client version.
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.17.4
+    restart: unless-stopped
+    environment:
+      discovery.type: single-node
+      cluster.name: mianshiya-es
+      xpack.security.enabled: "false"
+      ES_JAVA_OPTS: "-Xms512m -Xmx512m"
+    ports:
+      - "127.0.0.1:9201:9200"
+    volumes:
+      - es-data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS 'http://localhost:9200/_cluster/health?wait_for_status=yellow&timeout=5s' >/dev/null"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 40s
+
+  nacos:
+    image: nacos/nacos-server:v2.4.3
+    restart: unless-stopped
+    environment:
+      MODE: standalone
+      PREFER_HOST_MODE: hostname
+      NACOS_AUTH_ENABLE: "false"
+      JVM_XMS: 256m
+      JVM_XMX: 512m
+      JVM_XMN: 128m
+    ports:
+      - "127.0.0.1:8848:8848"
+      - "127.0.0.1:9848:9848"
+    volumes:
+      - nacos-data:/home/nacos/data
+      - nacos-logs:/home/nacos/logs
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8848/nacos/v1/console/health/readiness >/dev/null"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 45s
+
+  sentinel:
+    build:
+      context: ./docker/sentinel
+      args:
+        JAVA_IMAGE: ${SENTINEL_JAVA_IMAGE:-eclipse-temurin:8-jre}
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8858:8080"
+    environment:
+      JAVA_TOOL_OPTIONS: "-Xms128m -Xmx256m -Dcsp.sentinel.log.dir=/tmp/sentinel"
+
+  etcd:
+    # Host etcd is used by default; keep the old container/volume as a backup.
+    profiles: ["docker-etcd-backup"]
+    image: quay.io/coreos/etcd:v3.5.15
+    restart: unless-stopped
+    command:
+      - /usr/local/bin/etcd
+      - --name=mianshiya-etcd
+      - --data-dir=/etcd-data
+      - --listen-client-urls=http://0.0.0.0:2379
+      - --advertise-client-urls=http://127.0.0.1:2379
+      - --listen-peer-urls=http://0.0.0.0:2380
+      - --initial-advertise-peer-urls=http://etcd:2380
+      - --initial-cluster=mianshiya-etcd=http://etcd:2380
+    ports:
+      - "127.0.0.1:2379:2379"
+    volumes:
+      - etcd-data:/etcd-data
+    healthcheck:
+      test: ["CMD", "etcdctl", "--endpoints=http://127.0.0.1:2379", "endpoint", "health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  redis-data:
+  es-data:
+  nacos-data:
+  nacos-logs:
+  etcd-data:

@@ -1,0 +1,18 @@
+# Local fallback using Java 8 from an already cached official Apache image.
+# Does not run RocketMQ; Dockerfiles override its ENTRYPOINT.
+services:
+  elasticsearch:
+    environment:
+      # ES 7.17.4 bundled JDK crashes reading this Docker Desktop cgroup-v2 layout.
+      # Apply to launcher JVMs as well; heap is explicitly limited in compose.yaml.
+      JDK_JAVA_OPTIONS: "-XX:-UseContainerSupport"
+  sentinel:
+    build:
+      args:
+        JAVA_IMAGE: apache/rocketmq:5.2.0
+  nacos:
+    image: mianshiya-nacos-local:2.5.2
+    build:
+      context: ./docker/nacos
+      args:
+        JAVA_IMAGE: apache/rocketmq:5.2.0

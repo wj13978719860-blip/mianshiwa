@@ -1,0 +1,4 @@
+# Optional download-source override; same Elasticsearch version as compose.yaml.
+services:
+  elasticsearch:
+    image: docker.m.daocloud.io/docker.elastic.co/elasticsearch/elasticsearch:7.17.4
