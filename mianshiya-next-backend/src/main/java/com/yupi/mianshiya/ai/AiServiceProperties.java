@@ -27,12 +27,14 @@ public class AiServiceProperties implements InitializingBean {
     private int readTimeoutMs = 3000;
     /** 真实模型接口读取超时，独立于快速通信探测，默认 40 秒。 */
     private int modelReadTimeoutMs = 40000;
+    /** 问镜接口读取超时：题目长轮询最长 60 秒，JD/简历同步解析需调用模型，默认 130 秒。 */
+    private int wenjingReadTimeoutMs = 130000;
 
     @Override
     public void afterPropertiesSet() {
         // 关闭接入时不要求凭证；开启时立即校验，避免启动后才发现无法调用。
-        if (enabled && (token.trim().isEmpty() || name.trim().isEmpty()
-                || connectTimeoutMs <= 0 || readTimeoutMs <= 0 || modelReadTimeoutMs <= 0)) {
+        if (enabled && (token.trim().isEmpty() || name.trim().isEmpty() || connectTimeoutMs <= 0
+                || readTimeoutMs <= 0 || modelReadTimeoutMs <= 0 || wenjingReadTimeoutMs <= 0)) {
             throw new IllegalStateException("AI service credential, name and positive timeouts are required");
         }
     }

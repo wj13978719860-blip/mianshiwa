@@ -1,0 +1,242 @@
+"""Turn-finalize node between reward update and route decision.
+
+This real workflow node owns only end-of-turn housekeeping: clear the
+raw-answer side channel, trace the housekeeping step, then trace the
+route_decision row. Prompt-facing history is projected later by
+ask_question's HistoryContextBuilder from the complete ``qa_history``
+source.
+"""
+from __future__ import annotations
+
+import time
+from typing import Any
+
+from app.wenjing.core.logging import get_logger
+from app.wenjing.core.tracer import get_tracer
+from app.wenjing.engine.workflow.routers import route_after_eval_diagnostics
+from app.wenjing.engine.workflow.state import InterviewState
+from app.wenjing.services.trace_nodes import trace_node_metadata
+
+from .wait_answer import clear_raw_answer_for_state
+
+log = get_logger(__name__)
+
+
+def _clear_raw_answer_if_set(state: InterviewState) -> dict[str, Any]:
+    """Return the update that clears ``current_answer_raw``.
+
+    Emitted only when the field is non-empty so the rest of the graph's
+    state reducer graph remains a strict superset of the "no change"
+    shape. The clear is a single-turn ephemeral contract owned by this
+    node: ``wait_answer`` stores raw text in a process-local
+    side-channel, evaluator and verifier read it, and ``turn_finalize``
+    erases both the side-channel ref and any legacy raw state before
+    the next ``director_sample``.
+    """
+    if clear_raw_answer_for_state(state):
+        return {"current_answer_raw": "", "current_answer_raw_ref": ""}
+    return {}
+
+
+def _logical_turn_idx(state: InterviewState) -> int:
+    try:
+        return max(0, int(state.get("turn_idx", 0)) - 1)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _normalised_question(value: Any) -> str:
+    return " ".join(str(value or "").strip().split())
+
+
+def _turn_idx(value: Any) -> int | None:
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _same_turn_identity(left: dict[str, Any], right: dict[str, Any]) -> bool:
+    left_idx = _turn_idx(left.get("turn_idx"))
+    right_idx = _turn_idx(right.get("turn_idx"))
+    if left_idx is None or right_idx is None or left_idx != right_idx:
+        return False
+    left_question = _normalised_question(left.get("question"))
+    right_question = _normalised_question(right.get("question"))
+    return bool(left_question and left_question == right_question)
+
+
+def _pending_qa_turn_already_finalized(state: InterviewState, pending: dict[str, Any]) -> bool:
+    return any(
+        isinstance(turn, dict) and _same_turn_identity(turn, pending)
+        for turn in state.get("qa_history", []) or []
+    )
+
+
+def _pending_qa_turn_update(state: InterviewState) -> dict[str, Any]:
+    pending = state.get("pending_qa_turn")
+    if not isinstance(pending, dict):
+        return {}
+    if _pending_qa_turn_already_finalized(state, pending):
+        return {"pending_qa_turn": None}
+    return {
+        "qa_history": [dict(pending)],
+        "pending_qa_turn": None,
+    }
+
+
+def _finalized_qa_history(state: InterviewState, update: dict[str, Any]) -> list[Any]:
+    history = list(state.get("qa_history", []) or [])
+    appended = update.get("qa_history")
+    if isinstance(appended, list):
+        history.extend(appended)
+    return history
+
+
+def _trace_turn_finalize(
+    state: InterviewState,
+    update: dict[str, Any],
+    *,
+    node_started_at: float,
+) -> None:
+    try:
+        qa_history = _finalized_qa_history(state, update)
+        trace_state = {**state, **update, "qa_history": qa_history}
+        raw_answer_cleared = "current_answer_raw" in update
+        get_tracer().trace_node_event(
+            trace_state,
+            node="turn_finalize",
+            payload={
+                **trace_node_metadata("turn_finalize"),
+                "phase": "turn_finalize",
+                "reason": "turn_finalize",
+                "compressed_turns": 0,
+                "raw_answer_cleared": raw_answer_cleared,
+                "cleared_raw_answer": raw_answer_cleared,
+                "summary_updated": False,
+                "summary_mode": "none",
+                "history_projection_owner": "ask_question",
+                "qa_history_count": len(qa_history),
+                "next_step": "route_decision",
+                "elapsed_ms": int((time.perf_counter() - node_started_at) * 1000),
+            },
+            logical_turn_idx=_logical_turn_idx(state),
+        )
+    except Exception as e:  # pragma: no cover - side channel
+        log.warning("turn_finalize tracer side-channel failed: %s", e)
+
+
+def _trace_route_decision(state: InterviewState, update: dict[str, Any]) -> None:
+    """Record the post-evaluation router decision for rhythm audits."""
+    route_state = {
+        **state,
+        **update,
+        "qa_history": _finalized_qa_history(state, update),
+    }
+    evaluation = route_state.get("evaluation") or {}
+    question = route_state.get("current_question") or {}
+    diagnostics = route_after_eval_diagnostics(route_state)
+    decision = diagnostics.get("decision")
+    route_shadow = _route_shadow_from_contract_pass(route_state, diagnostics)
+    try:
+        get_tracer().trace_node_event(
+            route_state,
+            node="route_decision",
+            payload={
+                "router": "route_after_eval",
+                "decision": decision,
+                "next_node": diagnostics.get("next_node"),
+                "decision_reason": diagnostics.get("decision_reason"),
+                "decision_inputs": diagnostics.get("decision_inputs") or {},
+                "dimension": (
+                    question.get("dimension")
+                    or route_state.get("current_dimension")
+                    or "unknown"
+                ),
+                "recommended_next": evaluation.get("recommended_next"),
+                "recommended_next_plan": evaluation.get("recommended_next_plan"),
+                "recommended_probe_intent": evaluation.get("recommended_probe_intent"),
+                "passed": bool(evaluation.get("passed")),
+                "route_shadow": route_shadow,
+                "evaluation_source": evaluation.get("source"),
+                "fallback_reason": evaluation.get("fallback_reason"),
+                "fallback": bool(
+                    evaluation.get("source") == "fallback"
+                    or evaluation.get("fallback_reason")
+                ),
+                "formal_turn_idx": route_state.get("formal_turn_idx"),
+                "max_turns": route_state.get("max_turns"),
+                "turn_budget_remaining": route_state.get("turn_budget_remaining"),
+            },
+            logical_turn_idx=_logical_turn_idx(route_state),
+        )
+    except Exception as e:  # pragma: no cover - side channel
+        log.warning("route_decision tracer side-channel failed: %s", e)
+
+
+def _route_shadow_from_contract_pass(
+    route_state: dict[str, Any],
+    actual_diagnostics: dict[str, Any],
+) -> dict[str, Any]:
+    evaluation = route_state.get("evaluation") or {}
+    pass_shadow = evaluation.get("contract_pass_shadow") or {}
+    if not isinstance(pass_shadow, dict) or not pass_shadow.get("available"):
+        return {"available": False, "reason": "contract_pass_shadow_unavailable"}
+
+    shadow_eval = dict(evaluation)
+    shadow_eval["passed"] = bool(pass_shadow.get("passed"))
+    shadow_eval["recommended_next"] = pass_shadow.get("recommended_next")
+    shadow_eval["recommended_next_plan"] = pass_shadow.get("recommended_next_plan")
+
+    shadow_state = dict(route_state)
+    shadow_state["evaluation"] = shadow_eval
+    current_dim = str(
+        shadow_state.get("current_dimension")
+        or (shadow_state.get("current_question") or {}).get("dimension")
+        or ""
+    )
+    if current_dim:
+        status = dict(shadow_state.get("dimension_status") or {})
+        status[current_dim] = "passed" if shadow_eval.get("passed") else "active"
+        shadow_state["dimension_status"] = status
+
+    shadow_diagnostics = route_after_eval_diagnostics(shadow_state)
+    shadow_decision = shadow_diagnostics.get("decision")
+    actual_decision = actual_diagnostics.get("decision")
+    return {
+        "available": True,
+        "decision": shadow_decision,
+        "next_node": shadow_diagnostics.get("next_node"),
+        "decision_reason": shadow_diagnostics.get("decision_reason"),
+        "actual_decision": actual_decision,
+        "actual_next_node": actual_diagnostics.get("next_node"),
+        "actual_decision_reason": actual_diagnostics.get("decision_reason"),
+        "diff": shadow_decision != actual_decision,
+        "pass_shadow_reason": pass_shadow.get("reason"),
+        "pass_shadow": {
+            "passed": pass_shadow.get("passed"),
+            "recommended_next": pass_shadow.get("recommended_next"),
+            "recommended_next_plan": pass_shadow.get("recommended_next_plan"),
+        },
+    }
+
+
+def turn_finalize_node(state: InterviewState) -> dict[str, Any]:
+    node_started_at = time.perf_counter()
+    update = {
+        **_pending_qa_turn_update(state),
+        **_clear_raw_answer_if_set(state),
+    }
+    _trace_turn_finalize(
+        state,
+        update,
+        node_started_at=node_started_at,
+    )
+    _trace_route_decision(state, update)
+    return update
+
+
+# Deprecated Python-level alias retained for old imports and unit tests.
+compress_context_node = turn_finalize_node

@@ -1,0 +1,584 @@
+from __future__ import annotations
+
+from contextlib import contextmanager
+
+from sqlalchemy import create_engine, select
+from sqlalchemy.orm import sessionmaker
+
+from app.wenjing.models.base import Base
+from app.wenjing.models.strategy_learning import BanditPosterior, InterviewTurn
+from app.wenjing.models.strategy_memory import StrategySignal
+
+
+def test_experience_extractor_writes_qa_pattern_as_strategy_signal(monkeypatch) -> None:
+    from app.wenjing.engine.workflow.nodes import experience_extractor as extractor
+
+    engine = create_engine("sqlite:///:memory:", future=True)
+    Base.metadata.create_all(engine)
+    Session = sessionmaker(bind=engine, expire_on_commit=False, autoflush=False)
+
+    @contextmanager
+    def get_session():
+        with Session() as sess:
+            yield sess
+            sess.commit()
+
+    class _Settings:
+        experience_score_spread_threshold = 3.0
+        experience_min_observations = 5
+        experience_high_reward_mean = 0.70
+        experience_low_reward_mean = 0.30
+
+    class _Bandit:
+        priors = {}
+
+    class _Tracer:
+        def trace_node_event(self, *_args, **_kwargs) -> None:
+            return None
+
+    monkeypatch.setattr(extractor, "get_settings", lambda: _Settings())
+    monkeypatch.setattr(extractor, "get_bandit", lambda: _Bandit())
+    monkeypatch.setattr(extractor, "get_session", get_session)
+    monkeypatch.setattr(extractor, "get_tracer", lambda: _Tracer())
+    monkeypatch.setattr(extractor, "increment_session_count", lambda: None)
+
+    state = {
+        "session_id": "sess-signal",
+        "trace_id": "trace-signal",
+        "status": "completed",
+        "job_spec": {"level": "senior"},
+        "qa_history": [
+            {
+                "dimension": "system_design",
+                "selected_action": "plan_hint",
+                "evaluation": {"score": 5.0},
+            },
+            {
+                "dimension": "system_design",
+                "selected_action": "plan_hint",
+                "evaluation": {"score": 8.5},
+            },
+        ],
+    }
+
+    extractor.experience_extractor_node(state)  # type: ignore[arg-type]
+
+    with Session() as sess:
+        signals = list(sess.scalars(select(StrategySignal)))
+
+    assert len(signals) == 1
+    signal = signals[0]
+    assert signal.signal_key == (
+        "sess-signal:qa:score_recovery:senior:system_design:plan_hint"
+    )
+    assert signal.group_key == "qa:score_recovery:senior:system_design:plan_hint"
+    assert signal.session_id == "sess-signal"
+    assert signal.dimension == "system_design"
+    assert signal.job_level == "senior"
+    assert signal.action_id == "plan_hint"
+    assert signal.score_before == 5.0
+    assert signal.score_after == 8.5
+    assert signal.score_delta == 3.5
+    assert signal.signal_type == "score_recovery"
+    assert signal.status == "observed"
+
+
+def test_experience_extractor_parses_direction_scoped_bandit_context(
+    monkeypatch,
+) -> None:
+    from app.wenjing.engine.workflow.nodes import experience_extractor as extractor
+
+    engine = create_engine("sqlite:///:memory:", future=True)
+    Base.metadata.create_all(engine)
+    Session = sessionmaker(bind=engine, expire_on_commit=False, autoflush=False)
+
+    @contextmanager
+    def get_session():
+        with Session() as sess:
+            yield sess
+            sess.commit()
+
+    class _Settings:
+        experience_score_spread_threshold = 3.0
+        experience_min_observations = 5
+        experience_high_reward_mean = 0.70
+        experience_low_reward_mean = 0.30
+
+    class _Params:
+        alpha = 8.0
+        beta = 2.0
+
+        def mean(self) -> float:
+            return 0.8
+
+    class _Bandit:
+        priors = {("java_backend:senior:system_design", "plan_deep_probe"): _Params()}
+
+    class _Tracer:
+        def trace_node_event(self, *_args, **_kwargs) -> None:
+            return None
+
+    monkeypatch.setattr(extractor, "get_settings", lambda: _Settings())
+    monkeypatch.setattr(extractor, "get_bandit", lambda: _Bandit())
+    monkeypatch.setattr(extractor, "get_session", get_session)
+    monkeypatch.setattr(extractor, "get_tracer", lambda: _Tracer())
+    monkeypatch.setattr(extractor, "increment_session_count", lambda: None)
+
+    state = {
+        "session_id": "sess-bandit-signal",
+        "status": "completed",
+        "job_spec": {"level": "senior", "interview_direction": "java_backend"},
+        "qa_history": [],
+    }
+
+    extractor.experience_extractor_node(state)  # type: ignore[arg-type]
+
+    with Session() as sess:
+        signals = list(sess.scalars(select(StrategySignal)))
+
+    assert len(signals) == 1
+    signal = signals[0]
+    assert signal.group_key == (
+        "bandit:high_reward_arm:java_backend:senior:system_design:plan_deep_probe"
+    )
+    assert signal.job_level == "senior"
+    assert signal.dimension == "system_design"
+    assert signal.action_id == "plan_deep_probe"
+    assert signal.immediate_reward == 0.8
+
+
+def test_bandit_strategy_signal_payload_canonicalizes_legacy_action() -> None:
+    from app.wenjing.engine.workflow.nodes import experience_extractor as extractor
+
+    state = {
+        "session_id": "sess-canonical-bandit",
+        "turn_idx": 3,
+        "job_spec": {"level": "senior", "interview_direction": "java_backend"},
+        "qa_history": [],
+    }
+    legacy_insight = {
+        "type": "high_reward_arm",
+        "context_key": "java_backend:senior:system_design",
+        "action_id": "switch_dimension",
+        "mean_reward": 0.82,
+    }
+    canonical_insight = {
+        **legacy_insight,
+        "action_id": "plan_switch",
+    }
+
+    assert extractor.strategy_memory_key_for_insight(legacy_insight) == (
+        extractor.strategy_memory_key_for_insight(canonical_insight)
+    )
+
+    payload = extractor._signal_payload_from_bandit_insight(  # noqa: SLF001
+        state,
+        legacy_insight,
+    )
+
+    assert payload["group_key"] == (
+        "bandit:high_reward_arm:java_backend:senior:system_design:plan_switch"
+    )
+    assert payload["signal_key"] == (
+        "sess-canonical-bandit:"
+        "bandit:high_reward_arm:java_backend:senior:system_design:plan_switch"
+    )
+    assert payload["action_id"] == "plan_switch"
+    assert payload["plan_template"] == "plan_switch"
+    assert payload["original_action_id"] == "switch_dimension"
+
+
+def test_qa_strategy_signal_payload_canonicalizes_legacy_action() -> None:
+    from app.wenjing.engine.workflow.nodes import experience_extractor as extractor
+
+    state = {
+        "session_id": "sess-canonical-qa",
+        "turn_idx": 2,
+        "qa_history": [
+            {
+                "dimension": "system_design",
+                "selected_action": "give_hint",
+                "evaluation": {"score": 8.2},
+            }
+        ],
+    }
+    pattern = {
+        "type": "score_recovery",
+        "dimension": "system_design",
+        "job_level": "senior",
+        "recovery_action": "give_hint",
+        "score_before": 5.0,
+        "score_after": 8.2,
+        "score_delta": 3.2,
+    }
+
+    payload = extractor._signal_payload_from_qa_pattern(  # noqa: SLF001
+        state,
+        pattern,
+    )
+
+    assert payload["group_key"] == (
+        "qa:score_recovery:senior:system_design:plan_hint"
+    )
+    assert payload["signal_key"] == (
+        "sess-canonical-qa:qa:score_recovery:senior:system_design:plan_hint"
+    )
+    assert payload["action_id"] == "plan_hint"
+    assert payload["plan_template"] == "plan_hint"
+    assert payload["original_action_id"] == "give_hint"
+
+
+def test_qa_pattern_signal_carries_failure_categories_from_last_dim_turn(
+    monkeypatch,
+) -> None:
+    """PR3: when the dimension's last QA turn carries
+    ``evaluation.failure_categories``, the persisted signal must carry
+    the same legal subset so downstream aggregation can group signals
+    by structured failure type instead of free-form text."""
+    from app.wenjing.engine.workflow.nodes import experience_extractor as extractor
+
+    engine = create_engine("sqlite:///:memory:", future=True)
+    Base.metadata.create_all(engine)
+    Session = sessionmaker(bind=engine, expire_on_commit=False, autoflush=False)
+
+    @contextmanager
+    def get_session():
+        with Session() as sess:
+            yield sess
+            sess.commit()
+
+    class _Settings:
+        experience_score_spread_threshold = 3.0
+        experience_min_observations = 5
+        experience_high_reward_mean = 0.70
+        experience_low_reward_mean = 0.30
+
+    class _Bandit:
+        priors = {}
+
+    class _Tracer:
+        def trace_node_event(self, *_args, **_kwargs) -> None:
+            return None
+
+    monkeypatch.setattr(extractor, "get_settings", lambda: _Settings())
+    monkeypatch.setattr(extractor, "get_bandit", lambda: _Bandit())
+    monkeypatch.setattr(extractor, "get_session", get_session)
+    monkeypatch.setattr(extractor, "get_tracer", lambda: _Tracer())
+    monkeypatch.setattr(extractor, "increment_session_count", lambda: None)
+
+    state = {
+        "session_id": "sess-failcat",
+        "status": "completed",
+        "job_spec": {"level": "senior"},
+        "qa_history": [
+            {
+                "dimension": "system_design",
+                "selected_action": "plan_hint",
+                "evaluation": {
+                    "score": 5.0,
+                    "failure_categories": ["missing_metrics"],
+                },
+            },
+            {
+                "dimension": "system_design",
+                "selected_action": "plan_hint",
+                "evaluation": {
+                    "score": 8.5,
+                    # The latest turn surfaces a different failure mix;
+                    # the signal should reflect it, not the older one.
+                    "failure_categories": ["missing_evidence", "weak_debugging"],
+                },
+            },
+        ],
+    }
+
+    extractor.experience_extractor_node(state)  # type: ignore[arg-type]
+
+    with Session() as sess:
+        signals = list(sess.scalars(select(StrategySignal)))
+
+    assert len(signals) == 1
+    assert signals[0].failure_categories == [
+        "missing_evidence",
+        "weak_debugging",
+    ]
+
+
+def test_qa_pattern_signal_failure_categories_empty_when_missing(monkeypatch) -> None:
+    """No ``failure_categories`` on the latest dimension turn means the
+    signal carries ``[]`` — never ``None`` and never the older turn's
+    stale categories."""
+    from app.wenjing.engine.workflow.nodes import experience_extractor as extractor
+
+    engine = create_engine("sqlite:///:memory:", future=True)
+    Base.metadata.create_all(engine)
+    Session = sessionmaker(bind=engine, expire_on_commit=False, autoflush=False)
+
+    @contextmanager
+    def get_session():
+        with Session() as sess:
+            yield sess
+            sess.commit()
+
+    class _Settings:
+        experience_score_spread_threshold = 3.0
+        experience_min_observations = 5
+        experience_high_reward_mean = 0.70
+        experience_low_reward_mean = 0.30
+
+    class _Bandit:
+        priors = {}
+
+    class _Tracer:
+        def trace_node_event(self, *_args, **_kwargs) -> None:
+            return None
+
+    monkeypatch.setattr(extractor, "get_settings", lambda: _Settings())
+    monkeypatch.setattr(extractor, "get_bandit", lambda: _Bandit())
+    monkeypatch.setattr(extractor, "get_session", get_session)
+    monkeypatch.setattr(extractor, "get_tracer", lambda: _Tracer())
+    monkeypatch.setattr(extractor, "increment_session_count", lambda: None)
+
+    state = {
+        "session_id": "sess-failcat-empty",
+        "status": "completed",
+        "job_spec": {"level": "senior"},
+        "qa_history": [
+            {
+                "dimension": "system_design",
+                "selected_action": "plan_hint",
+                "evaluation": {
+                    "score": 5.0,
+                    # Older turn HAS a category — it must NOT leak forward.
+                    "failure_categories": ["missing_evidence"],
+                },
+            },
+            {
+                "dimension": "system_design",
+                "selected_action": "plan_hint",
+                "evaluation": {"score": 8.5},
+            },
+        ],
+    }
+
+    extractor.experience_extractor_node(state)  # type: ignore[arg-type]
+
+    with Session() as sess:
+        signals = list(sess.scalars(select(StrategySignal)))
+
+    assert len(signals) == 1
+    assert signals[0].failure_categories == []
+
+
+def test_bandit_insight_signal_carries_failure_categories_from_qa_history(
+    monkeypatch,
+) -> None:
+    """Bandit-driven insights also enrich themselves from the current
+    session's last matching dimension turn — when one exists. No match
+    -> empty list (bandit context can span sessions; we don't fabricate
+    categories from somewhere else)."""
+    from app.wenjing.engine.workflow.nodes import experience_extractor as extractor
+
+    engine = create_engine("sqlite:///:memory:", future=True)
+    Base.metadata.create_all(engine)
+    Session = sessionmaker(bind=engine, expire_on_commit=False, autoflush=False)
+
+    @contextmanager
+    def get_session():
+        with Session() as sess:
+            yield sess
+            sess.commit()
+
+    class _Settings:
+        experience_score_spread_threshold = 3.0
+        experience_min_observations = 5
+        experience_high_reward_mean = 0.70
+        experience_low_reward_mean = 0.30
+
+    class _Params:
+        alpha = 8.0
+        beta = 2.0
+
+        def mean(self) -> float:
+            return 0.8
+
+    class _Bandit:
+        priors = {("java_backend:senior:system_design", "plan_deep_probe"): _Params()}
+
+    class _Tracer:
+        def trace_node_event(self, *_args, **_kwargs) -> None:
+            return None
+
+    monkeypatch.setattr(extractor, "get_settings", lambda: _Settings())
+    monkeypatch.setattr(extractor, "get_bandit", lambda: _Bandit())
+    monkeypatch.setattr(extractor, "get_session", get_session)
+    monkeypatch.setattr(extractor, "get_tracer", lambda: _Tracer())
+    monkeypatch.setattr(extractor, "increment_session_count", lambda: None)
+
+    state = {
+        "session_id": "sess-bandit-failcat",
+        "status": "completed",
+        "job_spec": {"level": "senior", "interview_direction": "java_backend"},
+        "qa_history": [
+            {
+                "dimension": "system_design",
+                "selected_action": "plan_deep_probe",
+                "evaluation": {
+                    "score": 7.5,
+                    "failure_categories": ["unclear_architecture"],
+                },
+            },
+        ],
+    }
+
+    extractor.experience_extractor_node(state)  # type: ignore[arg-type]
+
+    with Session() as sess:
+        signals = list(sess.scalars(select(StrategySignal)))
+
+    assert len(signals) == 1
+    assert signals[0].dimension == "system_design"
+    assert signals[0].failure_categories == ["unclear_architecture"]
+
+
+def test_experience_extractor_reads_turns_and_posteriors_from_db_when_state_history_empty(
+    monkeypatch,
+) -> None:
+    from app.wenjing.engine.workflow.nodes import experience_extractor as extractor
+
+    engine = create_engine("sqlite:///:memory:", future=True)
+    Base.metadata.create_all(engine)
+    Session = sessionmaker(bind=engine, expire_on_commit=False, autoflush=False)
+
+    @contextmanager
+    def get_session():
+        with Session() as sess:
+            yield sess
+            sess.commit()
+
+    class _Settings:
+        experience_score_spread_threshold = 3.0
+        experience_min_observations = 5
+        experience_high_reward_mean = 0.70
+        experience_low_reward_mean = 0.30
+
+    class _Tracer:
+        events: list[dict] = []
+
+        def trace_node_event(self, _state, *, node, payload, **_kwargs) -> None:
+            self.events.append({"node": node, "payload": payload})
+
+    tracer = _Tracer()
+
+    monkeypatch.setattr(extractor, "get_settings", lambda: _Settings())
+    monkeypatch.setattr(extractor, "get_session", get_session)
+    monkeypatch.setattr(extractor, "get_tracer", lambda: tracer)
+    monkeypatch.setattr(extractor, "increment_session_count", lambda: None)
+
+    with Session() as sess:
+        sess.add_all(
+            [
+                InterviewTurn(
+                    session_id="sess-db-backed",
+                    turn_idx=0,
+                    dimension="system_design",
+                    job_level="senior",
+                    question="q1",
+                    answer="a1",
+                    resume_anchor_key="focus-payment-consistency",
+                    resume_anchor_label="支付迁移中的幂等和一致性",
+                    resume_project_id="proj-payment",
+                    selected_action="plan_deep_probe",
+                    evaluation={
+                        "score": 5.0,
+                        "failure_categories": ["missing_metrics"],
+                    },
+                    failure_categories=["missing_metrics"],
+                ),
+                InterviewTurn(
+                    session_id="sess-db-backed",
+                    turn_idx=1,
+                    dimension="system_design",
+                    job_level="senior",
+                    question="q2",
+                    answer="a2",
+                    resume_anchor_key="focus-payment-consistency",
+                    resume_anchor_label="支付迁移中的幂等和一致性",
+                    resume_project_id="proj-payment",
+                    selected_action="plan_deep_probe",
+                    evaluation={
+                        "score": 8.5,
+                        "failure_categories": ["missing_tradeoff"],
+                    },
+                    failure_categories=["missing_tradeoff"],
+                    immediate_reward=0.84,
+                ),
+                BanditPosterior(
+                    context_key="java_backend:senior:system_design",
+                    action_id="plan_deep_probe",
+                    alpha=8.0,
+                    beta=2.0,
+                    observation_count=8,
+                    immediate_update_count=8,
+                    delayed_update_count=0,
+                    last_reward=0.84,
+                    last_session_id="sess-db-backed",
+                    last_turn_idx=1,
+                ),
+            ]
+        )
+        sess.commit()
+
+    state = {
+        "session_id": "sess-db-backed",
+        "status": "completed",
+        "job_spec": {"level": "senior", "interview_direction": "java_backend"},
+        "qa_history": [],
+    }
+
+    extractor.experience_extractor_node(state)  # type: ignore[arg-type]
+
+    with Session() as sess:
+        signals = list(
+            sess.scalars(select(StrategySignal).order_by(StrategySignal.group_key))
+        )
+
+    assert {signal.signal_type for signal in signals} == {
+        "high_reward_arm",
+        "score_recovery",
+    }
+    qa_signal = next(s for s in signals if s.signal_type == "score_recovery")
+    assert qa_signal.group_key == (
+        "qa:score_recovery:senior:system_design:plan_deep_probe"
+    )
+    assert qa_signal.failure_categories == ["missing_tradeoff"]
+
+    bandit_signal = next(s for s in signals if s.signal_type == "high_reward_arm")
+    assert bandit_signal.group_key == (
+        "bandit:high_reward_arm:java_backend:senior:system_design:plan_deep_probe"
+    )
+    assert bandit_signal.immediate_reward == 0.8
+    assert any(
+        event["payload"].get("qa_source") == "db"
+        and event["payload"].get("bandit_source") == "db"
+        for event in tracer.events
+    )
+
+    qa = extractor._turn_row_to_qa(
+        InterviewTurn(
+            session_id="sess-db-backed",
+            turn_idx=2,
+            dimension="system_design",
+            question="q3",
+            answer="a3",
+            resume_anchor_key="focus-payment-consistency",
+            resume_anchor_label="支付迁移中的幂等和一致性",
+            resume_project_id="proj-payment",
+            evaluation={"score": 9.0},
+        )
+    )
+    assert qa["resume_anchor"] == {
+        "anchor_key": "focus-payment-consistency",
+        "label": "支付迁移中的幂等和一致性",
+        "project_id": "proj-payment",
+    }

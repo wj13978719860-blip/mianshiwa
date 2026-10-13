@@ -1,4 +1,5 @@
 """AI 服务的 HTTP 入口：管理生命周期、认证、请求校验和健康检查。"""
+import asyncio
 import hmac
 import logging
 import re
@@ -14,7 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field, StrictStr, field_validator
 from starlette.exceptions import HTTPException
 
 from .registry import Registry
-from .settings import Settings
+from .settings import Settings, wenjing_enabled_from_env
 from .model import ModelGateway, ModelFailure
 
 log = logging.getLogger(__name__)
@@ -60,19 +61,49 @@ def create_app(settings: Settings | None = None, registry_factory=Registry, mode
         # 模型连接池不在健康检查中发付费请求；测试可注入 HTTP 传输模拟供应商。
         gateway = ModelGateway(config, transport=model_transport)
         app.state.model = gateway
+        app.state.interviews = None
+        wenjing_started = False
         try:
+            if config.interview_enabled:
+                # 只有功能启用时连接独立 MySQL；初始化失败不得带着内存状态注册上线。
+                from .interview.service import InterviewService
+                app.state.interviews = InterviewService(gateway)
+                await app.state.interviews.start()
+            if wenjing is not None:
+                # 上游启动流程是同步的（建表、恢复中断会话），放到线程里避免阻塞事件循环。
+                await asyncio.to_thread(wenjing_gateway.startup, wenjing)
+                wenjing_started = True
             # 首次注册完成后，应用才开始接收 HTTP 请求。
             await registry.start()
             yield
         finally:
             try:
-                await gateway.close()
+                if app.state.interviews:
+                    await app.state.interviews.close()
+                if wenjing_started:
+                    await asyncio.to_thread(wenjing_gateway.shutdown, wenjing)
             finally:
-                await registry.close()
+                try:
+                    await gateway.close()
+                finally:
+                    await registry.close()
 
     # 这是内部服务，默认关闭 Swagger/OpenAPI；公开入口由 Java 提供。
     app = FastAPI(title="面试蛙 AI 服务", version="0.1.0", lifespan=lifespan,
                   docs_url=None, redoc_url=None, openapi_url=None)
+    from .interview.routes import router as interview_router
+    app.include_router(interview_router)
+    wenjing_enabled = settings.wenjing_enabled if settings is not None else wenjing_enabled_from_env()
+    wenjing = wenjing_gateway = None
+    if wenjing_enabled:
+        # 问镜子应用与旧面试路由并存，统一受下面的内部 Token 校验保护。
+        from .wenjing.adapters import gateway_app as wenjing_gateway
+        wenjing = wenjing_gateway.create_gateway_app()
+        app.mount(wenjing_gateway.MOUNT_PATH, wenjing)
+
+    def is_internal(path):
+        return (path in INTERNAL_PATHS or path == "/internal/v1/interviews"
+                or path.startswith("/internal/v1/interviews/") or path.startswith("/internal/wenjing/"))
 
     def error(request, status, kind, message):
         """统一错误结构，只返回排错需要的信息，不返回内部配置或凭证。"""
@@ -82,7 +113,7 @@ def create_app(settings: Settings | None = None, registry_factory=Registry, mode
     @app.middleware("http")
     async def probe_boundary(request: Request, call_next):
         """中间件先于接口执行：生成追踪标识 → 验证凭证 → 校验标识/就绪 → 处理请求。"""
-        if request.url.path not in INTERNAL_PATHS:
+        if not is_internal(request.url.path):
             return await call_next(request)
         # 非法标识也生成替代 UUID，使错误响应仍然可以被追踪；合法标识统一为小写。
         incoming = request.headers.get("X-Request-Id", "")
@@ -119,7 +150,7 @@ def create_app(settings: Settings | None = None, registry_factory=Registry, mode
     async def body_parse_error(request, exc):
         # 无效 UTF-8 等正文解析错误会被 FastAPI 转成 HTTP 400，而非上面的校验异常。
         # 只在探测路径将其统一为 422，保证错误正文也携带相同的请求标识。
-        if request.url.path in INTERNAL_PATHS and exc.status_code == 400:
+        if is_internal(request.url.path) and exc.status_code == 400:
             return error(request, 422, "INVALID_REQUEST", "Invalid request body")
         # 其他路径的 404、方法不允许等错误沿用框架行为，避免扩大本次修复范围。
         return await http_exception_handler(request, exc)
@@ -133,8 +164,10 @@ def create_app(settings: Settings | None = None, registry_factory=Registry, mode
     async def ready():
         """就绪检查：业务可用性与注册状态分开，Nacos 断开不直接让业务变为不可用。"""
         registry = app.state.registry
-        return JSONResponse(status_code=200 if registry.ready else 503, content={
-            "status": "ready" if registry.ready else "not_ready", "registry": registry.state})
+        interviews = app.state.interviews
+        usable = registry.ready and (interviews is None or not interviews.stopping)
+        return JSONResponse(status_code=200 if usable else 503, content={
+            "status": "ready" if usable else "not_ready", "registry": registry.state})
 
     @app.post(PROBE_PATH, response_model=ProbeResponse)
     async def probe(body: ProbeRequest, request: Request):

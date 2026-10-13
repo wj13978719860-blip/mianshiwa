@@ -1,0 +1,208 @@
+dimension: team_leadership
+seeds:
+  - id: team_leadership.management_team_growth
+    version: 1
+    title: Management team leadership and growth
+    dimension: team_leadership
+    job_levels: [junior, mid, senior]
+    skill_tags: [general_management, team_leadership, coaching, team_growth]
+    direction_tags: [business]
+    role_tags: [general_management]
+    rubric:
+      must_cover: [team_diagnosis, coaching_action, motivation, follow_up]
+      minimum_bar: Explain how to diagnose team capability or motivation issues and help people improve.
+      stretch: Balance individual development, team performance, and manager accountability.
+    priority: 25
+    status: active
+    source: manual_yaml
+    scope: global
+    language: zh-CN
+    variants:
+      - id: team_leadership.management_team_growth.new_member_underperformance
+        version: 1
+        intent: opening
+        difficulty: standard
+        scenario_brief: A new team member is missing expectations, and senior members are losing patience.
+        question_stem: How would you diagnose the performance issue and create a coaching plan that protects team trust?
+        prompt_template: Generate a management leadership question about coaching, performance diagnosis, and team trust.
+        scenario_skill_tags: [general_management, team_leadership, coaching, performance]
+        resume_anchor_hints: [team_leadership, coaching, performance, onboarding, manager]
+        failure_categories: [shallow_analysis, poor_communication, weak_follow_up]
+        rubric_additions: [Diagnose ability versus clarity issue, set coaching actions, review progress]
+        expected_signals: [Separates expectation clarity from capability, gives feedback directly, tracks improvement]
+        anti_patterns: [Labels person too early, avoids feedback, delegates coaching entirely]
+        good_answer_hints: [Clarify expectations, coach with evidence, review progress with team impact in mind]
+        reviewed_acceptance_checks:
+          - check_id: reviewed:team_leadership.management_team_growth.new_member_underperformance:must_cover:2dff30a8:v1
+            source: must_cover
+            source_text: team_diagnosis
+            acceptance_check: 候选人围绕「team_diagnosis」说明团队目标、人员或协作问题、管理动作、反馈机制和结果复盘。
+            severity: core
+            review_status: reviewed
+            version: 1
+            reviewed_seed_version: 1
+            reviewed_variant_version: 1
+            reviewed_by: codex
+            reviewed_at: '2026-06-08'
+          - check_id: reviewed:team_leadership.management_team_growth.new_member_underperformance:must_cover:f514eb37:v1
+            source: must_cover
+            source_text: coaching_action
+            acceptance_check: 候选人围绕「coaching_action」说明团队目标、人员或协作问题、管理动作、反馈机制和结果复盘。
+            severity: core
+            review_status: reviewed
+            version: 1
+            reviewed_seed_version: 1
+            reviewed_variant_version: 1
+            reviewed_by: codex
+            reviewed_at: '2026-06-08'
+          - check_id: reviewed:team_leadership.management_team_growth.new_member_underperformance:must_cover:d02743d5:v1
+            source: must_cover
+            source_text: motivation
+            acceptance_check: 候选人围绕「motivation」说明团队目标、人员或协作问题、管理动作、反馈机制和结果复盘。
+            severity: core
+            review_status: reviewed
+            version: 1
+            reviewed_seed_version: 1
+            reviewed_variant_version: 1
+            reviewed_by: codex
+            reviewed_at: '2026-06-08'
+          - check_id: reviewed:team_leadership.management_team_growth.new_member_underperformance:must_cover:568c1c84:v1
+            source: must_cover
+            source_text: follow_up
+            acceptance_check: 候选人围绕「follow_up」说明团队目标、人员或协作问题、管理动作、反馈机制和结果复盘。
+            severity: core
+            review_status: reviewed
+            version: 1
+            reviewed_seed_version: 1
+            reviewed_variant_version: 1
+            reviewed_by: codex
+            reviewed_at: '2026-06-08'
+          - check_id: reviewed:team_leadership.management_team_growth.new_member_underperformance:rubric_addition:057ae307:v1
+            source: rubric_addition
+            source_text: Diagnose ability versus clarity issue
+            acceptance_check: 候选人补充说明「Diagnose ability versus clarity issue」，并落到数据、案例、客户/用户反馈、流程证据、协作动作或验证方式中的至少一类具体证据。
+            severity: supporting
+            review_status: reviewed
+            version: 1
+            reviewed_seed_version: 1
+            reviewed_variant_version: 1
+            reviewed_by: codex
+            reviewed_at: '2026-06-08'
+          - check_id: reviewed:team_leadership.management_team_growth.new_member_underperformance:rubric_addition:f47611fe:v1
+            source: rubric_addition
+            source_text: set coaching actions
+            acceptance_check: 候选人补充说明「set coaching actions」，并落到数据、案例、客户/用户反馈、流程证据、协作动作或验证方式中的至少一类具体证据。
+            severity: supporting
+            review_status: reviewed
+            version: 1
+            reviewed_seed_version: 1
+            reviewed_variant_version: 1
+            reviewed_by: codex
+            reviewed_at: '2026-06-08'
+          - check_id: reviewed:team_leadership.management_team_growth.new_member_underperformance:rubric_addition:098fa000:v1
+            source: rubric_addition
+            source_text: review progress
+            acceptance_check: 候选人补充说明「review progress」，并落到数据、案例、客户/用户反馈、流程证据、协作动作或验证方式中的至少一类具体证据。
+            severity: supporting
+            review_status: reviewed
+            version: 1
+            reviewed_seed_version: 1
+            reviewed_variant_version: 1
+            reviewed_by: codex
+            reviewed_at: '2026-06-08'
+        priority: 17
+        status: active
+      - id: team_leadership.management_team_growth.low_morale_after_change
+        version: 1
+        intent: deep_probe
+        difficulty: deep_probe
+        scenario_brief: After a strategy change, the team follows tasks but morale and ownership are visibly declining.
+        question_stem: How would you rebuild ownership and motivation while still moving the business change forward?
+        prompt_template: Generate a deep probe about team leadership during change and morale decline.
+        scenario_skill_tags: [general_management, team_leadership, change_management, motivation]
+        resume_anchor_hints: [change, morale, team_management, ownership, communication]
+        failure_categories: [poor_communication, weak_stakeholder_alignment, vague_process]
+        rubric_additions: [Acknowledge change impact, explain why, create participation and feedback loop]
+        expected_signals: [Listens to concerns, connects work to goal, creates small wins]
+        anti_patterns: [Only repeats strategy, ignores emotion, uses pressure as motivation]
+        good_answer_hints: [Listen first, explain context, create ownership through concrete choices]
+        reviewed_acceptance_checks:
+          - check_id: reviewed:team_leadership.management_team_growth.low_morale_after_change:must_cover:75bcc9c0:v1
+            source: must_cover
+            source_text: team_diagnosis
+            acceptance_check: 候选人围绕「team_diagnosis」说明团队目标、人员或协作问题、管理动作、反馈机制和结果复盘。
+            severity: core
+            review_status: reviewed
+            version: 1
+            reviewed_seed_version: 1
+            reviewed_variant_version: 1
+            reviewed_by: codex
+            reviewed_at: '2026-06-08'
+          - check_id: reviewed:team_leadership.management_team_growth.low_morale_after_change:must_cover:c01a8735:v1
+            source: must_cover
+            source_text: coaching_action
+            acceptance_check: 候选人围绕「coaching_action」说明团队目标、人员或协作问题、管理动作、反馈机制和结果复盘。
+            severity: core
+            review_status: reviewed
+            version: 1
+            reviewed_seed_version: 1
+            reviewed_variant_version: 1
+            reviewed_by: codex
+            reviewed_at: '2026-06-08'
+          - check_id: reviewed:team_leadership.management_team_growth.low_morale_after_change:must_cover:eb5d546d:v1
+            source: must_cover
+            source_text: motivation
+            acceptance_check: 候选人围绕「motivation」说明团队目标、人员或协作问题、管理动作、反馈机制和结果复盘。
+            severity: core
+            review_status: reviewed
+            version: 1
+            reviewed_seed_version: 1
+            reviewed_variant_version: 1
+            reviewed_by: codex
+            reviewed_at: '2026-06-08'
+          - check_id: reviewed:team_leadership.management_team_growth.low_morale_after_change:must_cover:f5f6ea7d:v1
+            source: must_cover
+            source_text: follow_up
+            acceptance_check: 候选人围绕「follow_up」说明团队目标、人员或协作问题、管理动作、反馈机制和结果复盘。
+            severity: core
+            review_status: reviewed
+            version: 1
+            reviewed_seed_version: 1
+            reviewed_variant_version: 1
+            reviewed_by: codex
+            reviewed_at: '2026-06-08'
+          - check_id: reviewed:team_leadership.management_team_growth.low_morale_after_change:rubric_addition:5ee57776:v1
+            source: rubric_addition
+            source_text: Acknowledge change impact
+            acceptance_check: 候选人补充说明「Acknowledge change impact」，并落到数据、案例、客户/用户反馈、流程证据、协作动作或验证方式中的至少一类具体证据。
+            severity: supporting
+            review_status: reviewed
+            version: 1
+            reviewed_seed_version: 1
+            reviewed_variant_version: 1
+            reviewed_by: codex
+            reviewed_at: '2026-06-08'
+          - check_id: reviewed:team_leadership.management_team_growth.low_morale_after_change:rubric_addition:4477fa12:v1
+            source: rubric_addition
+            source_text: explain why
+            acceptance_check: 候选人补充说明「explain why」，并落到数据、案例、客户/用户反馈、流程证据、协作动作或验证方式中的至少一类具体证据。
+            severity: supporting
+            review_status: reviewed
+            version: 1
+            reviewed_seed_version: 1
+            reviewed_variant_version: 1
+            reviewed_by: codex
+            reviewed_at: '2026-06-08'
+          - check_id: reviewed:team_leadership.management_team_growth.low_morale_after_change:rubric_addition:649ad135:v1
+            source: rubric_addition
+            source_text: create participation and feedback loop
+            acceptance_check: 候选人补充说明「create participation and feedback loop」，并落到数据、案例、客户/用户反馈、流程证据、协作动作或验证方式中的至少一类具体证据。
+            severity: supporting
+            review_status: reviewed
+            version: 1
+            reviewed_seed_version: 1
+            reviewed_variant_version: 1
+            reviewed_by: codex
+            reviewed_at: '2026-06-08'
+        priority: 15
+        status: active

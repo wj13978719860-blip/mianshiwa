@@ -2,3 +2,6 @@
 # 修改后重新生成 requirements-dev.txt，不手工维护传递依赖及哈希。
 -r requirements.in
 pytest==8.3.5
+# 上游 wenjing/tests 使用 asyncio_mode=auto 与本地账号测试。
+pytest-asyncio>=0.24,<1
+bcrypt>=4.2,<6

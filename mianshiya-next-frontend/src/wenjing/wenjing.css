@@ -1,0 +1,17 @@
+.wenjing-page {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 24px 0 48px;
+}
+
+.wenjing-page.narrow {
+  max-width: 820px;
+}
+
+.wenjing-page.wide {
+  max-width: 1200px;
+}
+
+.wenjing-page-header {
+  margin-bottom: 24px;
+}

@@ -1,6 +1,18 @@
 # 面试蛙独立 AI 服务
 
-本目录提供 Python 3.11 / FastAPI 服务，注册现有 Nacos，由 Java 后端通过 OpenFeign 按服务名调用。包含通信探测（`mode=stub`）和管理员真实模型测试（`mode=model`）两个独立入口，后者使用 OpenAI Chat Completions 兼容协议。原后端的 Ark 业务接口继续使用原路径。
+本目录提供 Python 3.11 / FastAPI 服务，注册现有 Nacos，由 Java 后端通过 OpenFeign 按服务名调用。包含通信探测、管理员模型调试和新的文本模拟面试。模型使用 OpenAI Chat Completions 兼容协议；原模拟面试的 Ark 创建/聊天入口已停用，其他尚未迁移的 AI 业务不受本次替换影响。
+
+## 新模拟面试
+
+用户仍从 `/mockInterview/add` 进入。设置、答题、追问、评价、报告和记录均通过 Java `/api/ai/interviews` 调用 Python；用户不直接访问内部接口。交互参考问镜，页面保留面试蛙的 Next.js / Ant Design 风格。
+
+`app/interview/workflow.py` 是 LangGraph 面试图，`contracts.py` 是输入和评价结构，`service.py` 保存命令并在后台执行，`routes.py` 只负责快速受理及查询。会话状态和检查点都存入独立 MySQL 库，题目与参考答案在创建时冻结。每题最多一次追问，最多十道主问题；跳过或提前结束的未答题不会被评分。
+
+在私有 `.runtime/ai-service.env` 配置 `.env.example` 中的 `AI_INTERVIEW_ENABLED` 和 `AI_MYSQL_*`，并启用已配置的对话模型。数据库需提前创建，账号只授予该 AI 库的 SELECT、INSERT、UPDATE、DELETE、CREATE、ALTER、INDEX 权限。首次启动创建检查点及面试表；配置或初始化失败时不回退内存。
+
+当前执行器只支持单个 Python 实例，通过独立库的 MySQL 命名锁拒绝重复执行器启动。启动会把中断的执行明确标记为失败，用户可显式重试；模型调用成功但结果落库前中断时，不能承诺费用只产生一次。更多改动及真实验收见 [前后端重建验收记录](../docs/AI模拟面试重建-前后端验收.md)。
+
+v2面试已接入ES BM25＋DashScope `text-embedding-v3`（1024维）向量召回，RRF融合后供导演选题；检索限定于本场选定题库的冻结快照。原v1检查点仍按旧图恢复。当前尚未实现自主查询改写、工具选择和完整Agentic RAG，详细状态见 `docs/AI面试问镜对齐-第一批实现与验收.md`。
 
 ## 建议的代码阅读顺序
 
@@ -133,7 +145,7 @@ Python 统一错误类型包括 `MODEL_NOT_CONFIGURED`、`MODEL_BUSY`、`MODEL_A
 
 代码阅读：`app/model.py` 负责模型协议、连接池、超时与错误；`app/main.py` 负责接口认证/校验和响应；Java 的 `AiModelClient`、`AiModelClientConfiguration`、`AiModelContract`、`AiModelController` 分别负责声明调用、独立超时、响应验证和管理员入口。所有新增源文件有中文注释。
 
-本步骤不提供聊天前端、面试会话、作答评分或知识库检索，不保存模型回答到数据库。`tests/test_model.py` 模拟供应商验证协议和故障，不消耗额度；真实验收结果见项目 `docs/AI模型接入-第一步验收.md`。
+上面的模型探测接口本身不创建面试或保存回答；正式面试功能和持久化流程见本文开头及业务验收文档。`tests/test_model.py` 模拟供应商验证协议和故障，不消耗额度；真实验收结果见项目 `docs/AI模型接入-第一步验收.md`。
 
 ### 服务通信配置
 
@@ -198,3 +210,21 @@ $env:PYTHONPATH = (Join-Path $PWD 'mianshiya-ai-service')
 ```
 
 这份备份只存在于实施机器。其他环境部署前也需保留自己的基线产物、配置和 Git 版本。源码回退应从已记录基线另建 checkout 构建，不覆盖后续改动，不重置数据库或中间件数据卷。
+
+## 正式面试的ES混合检索配置
+
+在被Git忽略的 `.runtime/ai-service.env` 配置：
+
+```dotenv
+AI_RETRIEVAL_MODE=hybrid
+AI_ES_URL=http://127.0.0.1:9201
+AI_ES_KNOWLEDGE_INDEX=mianshiwa-ai-questions-v3-1024
+EMBEDDING_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+EMBEDDING_MODEL=text-embedding-v3
+EMBEDDING_DIMENSIONS=1024
+EMBEDDING_API_KEY=
+```
+
+填写独立DashScope Key后重启Python。`off`关闭ES接入；`bm25`只走关键词；`hybrid`必须填写真实Embedding Key，不自动降级。模型或维度变更建议使用新AI索引，服务拒绝覆盖冲突映射。ES 7.17的脚本向量评分是精确检索，当前按至多100条会话候选过滤，不承诺大规模近似kNN性能。
+
+首次出题会同步所选题库快照并向量化，可能比后续命中缓存慢；失败会返回稳定的 `EMBEDDING_*`、`KNOWLEDGE_*`错误，Key和供应商正文不回传浏览器。检索轨迹及评分合同只保存在私有检查点。

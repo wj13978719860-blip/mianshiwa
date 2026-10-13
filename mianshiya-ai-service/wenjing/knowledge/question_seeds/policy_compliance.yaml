@@ -1,0 +1,208 @@
+dimension: policy_compliance
+seeds:
+  - id: policy_compliance.hr_policy_risk_control
+    version: 1
+    title: HR policy compliance risk control
+    dimension: policy_compliance
+    job_levels: [junior, mid, senior]
+    skill_tags: [hr_function, policy_compliance, risk_control, process_governance]
+    direction_tags: [business]
+    role_tags: [hr_function]
+    rubric:
+      must_cover: [policy_boundary, legal_risk, process_trace, stakeholder_communication]
+      minimum_bar: Explain how to apply HR policy consistently while managing risk and user experience.
+      stretch: Distinguish policy principle, exception handling, and escalation criteria.
+    priority: 24
+    status: active
+    source: manual_yaml
+    scope: global
+    language: zh-CN
+    variants:
+      - id: policy_compliance.hr_policy_risk_control.attendance_exception
+        version: 1
+        intent: opening
+        difficulty: standard
+        scenario_brief: A manager asks HR to make an exception to attendance policy for a high performer.
+        question_stem: How would you judge whether an exception is acceptable and communicate the decision to the manager and employee?
+        prompt_template: Generate an HR policy compliance question about exception boundaries and communication.
+        scenario_skill_tags: [hr_function, policy_compliance, exception_handling, risk_control]
+        resume_anchor_hints: [policy, compliance, hr_process, manager, employee_relations]
+        failure_categories: [missing_risk_boundary, weak_stakeholder_alignment, vague_process]
+        rubric_additions: [Clarify policy purpose, evaluate precedent risk, document decision path]
+        expected_signals: [Balances consistency and context, defines approval path, communicates respectfully]
+        anti_patterns: [Applies policy mechanically, creates hidden exception, ignores documentation]
+        good_answer_hints: [Check principle and precedent, align with owner, record the rationale]
+        reviewed_acceptance_checks:
+          - check_id: reviewed:policy_compliance.hr_policy_risk_control.attendance_exception:must_cover:5befad94:v1
+            source: must_cover
+            source_text: policy_boundary
+            acceptance_check: 候选人围绕「policy_boundary」说明制度或合规要求、适用边界、执行动作和风险处理方式。
+            severity: core
+            review_status: reviewed
+            version: 1
+            reviewed_seed_version: 1
+            reviewed_variant_version: 1
+            reviewed_by: codex
+            reviewed_at: '2026-06-08'
+          - check_id: reviewed:policy_compliance.hr_policy_risk_control.attendance_exception:must_cover:f20a7a59:v1
+            source: must_cover
+            source_text: legal_risk
+            acceptance_check: 候选人围绕「legal_risk」说明制度或合规要求、适用边界、执行动作和风险处理方式。
+            severity: core
+            review_status: reviewed
+            version: 1
+            reviewed_seed_version: 1
+            reviewed_variant_version: 1
+            reviewed_by: codex
+            reviewed_at: '2026-06-08'
+          - check_id: reviewed:policy_compliance.hr_policy_risk_control.attendance_exception:must_cover:ff1eca1e:v1
+            source: must_cover
+            source_text: process_trace
+            acceptance_check: 候选人围绕「process_trace」说明制度或合规要求、适用边界、执行动作和风险处理方式。
+            severity: core
+            review_status: reviewed
+            version: 1
+            reviewed_seed_version: 1
+            reviewed_variant_version: 1
+            reviewed_by: codex
+            reviewed_at: '2026-06-08'
+          - check_id: reviewed:policy_compliance.hr_policy_risk_control.attendance_exception:must_cover:d168e1da:v1
+            source: must_cover
+            source_text: stakeholder_communication
+            acceptance_check: 候选人围绕「stakeholder_communication」说明制度或合规要求、适用边界、执行动作和风险处理方式。
+            severity: core
+            review_status: reviewed
+            version: 1
+            reviewed_seed_version: 1
+            reviewed_variant_version: 1
+            reviewed_by: codex
+            reviewed_at: '2026-06-08'
+          - check_id: reviewed:policy_compliance.hr_policy_risk_control.attendance_exception:rubric_addition:f11ade19:v1
+            source: rubric_addition
+            source_text: Clarify policy purpose
+            acceptance_check: 候选人补充说明「Clarify policy purpose」，并落到数据、案例、客户/用户反馈、流程证据、协作动作或验证方式中的至少一类具体证据。
+            severity: supporting
+            review_status: reviewed
+            version: 1
+            reviewed_seed_version: 1
+            reviewed_variant_version: 1
+            reviewed_by: codex
+            reviewed_at: '2026-06-08'
+          - check_id: reviewed:policy_compliance.hr_policy_risk_control.attendance_exception:rubric_addition:b7bccd41:v1
+            source: rubric_addition
+            source_text: evaluate precedent risk
+            acceptance_check: 候选人补充说明「evaluate precedent risk」，并落到数据、案例、客户/用户反馈、流程证据、协作动作或验证方式中的至少一类具体证据。
+            severity: supporting
+            review_status: reviewed
+            version: 1
+            reviewed_seed_version: 1
+            reviewed_variant_version: 1
+            reviewed_by: codex
+            reviewed_at: '2026-06-08'
+          - check_id: reviewed:policy_compliance.hr_policy_risk_control.attendance_exception:rubric_addition:830a90b3:v1
+            source: rubric_addition
+            source_text: document decision path
+            acceptance_check: 候选人补充说明「document decision path」，并落到数据、案例、客户/用户反馈、流程证据、协作动作或验证方式中的至少一类具体证据。
+            severity: supporting
+            review_status: reviewed
+            version: 1
+            reviewed_seed_version: 1
+            reviewed_variant_version: 1
+            reviewed_by: codex
+            reviewed_at: '2026-06-08'
+        priority: 17
+        status: active
+      - id: policy_compliance.hr_policy_risk_control.sensitive_data_access
+        version: 1
+        intent: deep_probe
+        difficulty: deep_probe
+        scenario_brief: A business leader requests salary and performance data for a reorganization analysis.
+        question_stem: How would you control access to sensitive employee data while still supporting the business decision?
+        prompt_template: Generate a deep probe about HR sensitive data boundary and compliance risk.
+        scenario_skill_tags: [hr_function, policy_compliance, data_privacy, risk_control]
+        resume_anchor_hints: [employee_data, salary, performance, compliance, privacy]
+        failure_categories: [missing_risk_boundary, weak_evidence, poor_communication]
+        rubric_additions: [Limit data scope, verify authorization, provide aggregated alternatives when possible]
+        expected_signals: [Checks need to know, protects sensitive fields, documents approval]
+        anti_patterns: [Shares raw data casually, blocks business without alternative, ignores audit trail]
+        good_answer_hints: [Clarify purpose, minimize data, use approval and traceability]
+        reviewed_acceptance_checks:
+          - check_id: reviewed:policy_compliance.hr_policy_risk_control.sensitive_data_access:must_cover:91c5ea85:v1
+            source: must_cover
+            source_text: policy_boundary
+            acceptance_check: 候选人围绕「policy_boundary」说明制度或合规要求、适用边界、执行动作和风险处理方式。
+            severity: core
+            review_status: reviewed
+            version: 1
+            reviewed_seed_version: 1
+            reviewed_variant_version: 1
+            reviewed_by: codex
+            reviewed_at: '2026-06-08'
+          - check_id: reviewed:policy_compliance.hr_policy_risk_control.sensitive_data_access:must_cover:93557dc2:v1
+            source: must_cover
+            source_text: legal_risk
+            acceptance_check: 候选人围绕「legal_risk」说明制度或合规要求、适用边界、执行动作和风险处理方式。
+            severity: core
+            review_status: reviewed
+            version: 1
+            reviewed_seed_version: 1
+            reviewed_variant_version: 1
+            reviewed_by: codex
+            reviewed_at: '2026-06-08'
+          - check_id: reviewed:policy_compliance.hr_policy_risk_control.sensitive_data_access:must_cover:7510d1f7:v1
+            source: must_cover
+            source_text: process_trace
+            acceptance_check: 候选人围绕「process_trace」说明制度或合规要求、适用边界、执行动作和风险处理方式。
+            severity: core
+            review_status: reviewed
+            version: 1
+            reviewed_seed_version: 1
+            reviewed_variant_version: 1
+            reviewed_by: codex
+            reviewed_at: '2026-06-08'
+          - check_id: reviewed:policy_compliance.hr_policy_risk_control.sensitive_data_access:must_cover:4841268c:v1
+            source: must_cover
+            source_text: stakeholder_communication
+            acceptance_check: 候选人围绕「stakeholder_communication」说明制度或合规要求、适用边界、执行动作和风险处理方式。
+            severity: core
+            review_status: reviewed
+            version: 1
+            reviewed_seed_version: 1
+            reviewed_variant_version: 1
+            reviewed_by: codex
+            reviewed_at: '2026-06-08'
+          - check_id: reviewed:policy_compliance.hr_policy_risk_control.sensitive_data_access:rubric_addition:dfe6a00c:v1
+            source: rubric_addition
+            source_text: Limit data scope
+            acceptance_check: 候选人补充说明「Limit data scope」，并落到数据、案例、客户/用户反馈、流程证据、协作动作或验证方式中的至少一类具体证据。
+            severity: supporting
+            review_status: reviewed
+            version: 1
+            reviewed_seed_version: 1
+            reviewed_variant_version: 1
+            reviewed_by: codex
+            reviewed_at: '2026-06-08'
+          - check_id: reviewed:policy_compliance.hr_policy_risk_control.sensitive_data_access:rubric_addition:d4965469:v1
+            source: rubric_addition
+            source_text: verify authorization
+            acceptance_check: 候选人补充说明「verify authorization」，并落到数据、案例、客户/用户反馈、流程证据、协作动作或验证方式中的至少一类具体证据。
+            severity: supporting
+            review_status: reviewed
+            version: 1
+            reviewed_seed_version: 1
+            reviewed_variant_version: 1
+            reviewed_by: codex
+            reviewed_at: '2026-06-08'
+          - check_id: reviewed:policy_compliance.hr_policy_risk_control.sensitive_data_access:rubric_addition:d1a728fd:v1
+            source: rubric_addition
+            source_text: provide aggregated alternatives when possible
+            acceptance_check: 候选人补充说明「provide aggregated alternatives when possible」，并落到数据、案例、客户/用户反馈、流程证据、协作动作或验证方式中的至少一类具体证据。
+            severity: supporting
+            review_status: reviewed
+            version: 1
+            reviewed_seed_version: 1
+            reviewed_variant_version: 1
+            reviewed_by: codex
+            reviewed_at: '2026-06-08'
+        priority: 15
+        status: active

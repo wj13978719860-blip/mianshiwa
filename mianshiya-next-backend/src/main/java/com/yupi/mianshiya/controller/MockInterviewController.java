@@ -52,12 +52,9 @@ public class MockInterviewController {
      */
     @PostMapping("/add")
     public BaseResponse<Long> addMockInterview(@RequestBody MockInterviewAddRequest mockInterviewAddRequest, HttpServletRequest request) {
-        ThrowUtils.throwIf(mockInterviewAddRequest == null, ErrorCode.PARAMS_ERROR);
-        // 获取当前登录用户
-        User loginUser = userService.getLoginUser(request);
-        // 调用 Service 创建模拟面试
-        Long mockInterviewId = mockInterviewService.createMockInterview(mockInterviewAddRequest, loginUser);
-        return ResultUtils.success(mockInterviewId);
+        // 原 Ark 聊天流程已被独立 AI 面试服务替换，不再创建旧格式会话。
+        userService.getLoginUser(request);
+        throw new BusinessException(ErrorCode.OPERATION_ERROR, "原模拟面试已替换，请使用新的 AI 模拟面试入口");
     }
 
     /**
@@ -100,6 +97,11 @@ public class MockInterviewController {
         // 查询数据库
         MockInterview mockInterview = mockInterviewService.getById(id);
         ThrowUtils.throwIf(mockInterview == null, ErrorCode.NOT_FOUND_ERROR);
+        // 旧记录仅供本人或管理员查阅，不能通过枚举 ID 读取他人的回答。
+        User loginUser = userService.getLoginUser(request);
+        if (!mockInterview.getUserId().equals(loginUser.getId()) && !userService.isAdmin(request)) {
+            throw new BusinessException(ErrorCode.NO_AUTH_ERROR);
+        }
         // 获取封装类
         return ResultUtils.success(mockInterview);
     }
@@ -166,11 +168,8 @@ public class MockInterviewController {
     @PostMapping("/handleEvent")
     public BaseResponse<String> handleMockInterviewEvent(@RequestBody MockInterviewEventRequest mockInterviewEventRequest,
                                                          HttpServletRequest request) {
-        // 获取当前登录用户
-        User loginUser = userService.getLoginUser(request);
-        // 调用 Service 处理模拟面试事件
-        String aiResponse = mockInterviewService.handleMockInterviewEvent(mockInterviewEventRequest, loginUser);
-        // 返回 AI 的回复
-        return ResultUtils.success(aiResponse);
+        // 不自动回落旧模型，避免新旧两套面试链路同时执行。
+        userService.getLoginUser(request);
+        throw new BusinessException(ErrorCode.OPERATION_ERROR, "原模拟面试已停用，请从新入口开始面试");
     }
 }

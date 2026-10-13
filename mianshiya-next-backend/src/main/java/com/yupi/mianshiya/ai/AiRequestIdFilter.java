@@ -27,7 +27,8 @@ public class AiRequestIdFilter extends OncePerRequestFilter {
     protected boolean shouldNotFilter(HttpServletRequest request) {
         // 去掉 /api 等 context-path 后比较路径，不干扰项目原有接口。
         String path = request.getRequestURI().substring(request.getContextPath().length());
-        return !"/ai/service/probe".equals(path) && !"/ai/service/model/probe".equals(path);
+        return !"/ai/service/probe".equals(path) && !"/ai/service/model/probe".equals(path)
+                && !path.startsWith("/ai/interviews") && !path.startsWith("/ai/wenjing/");
     }
 
     @Override

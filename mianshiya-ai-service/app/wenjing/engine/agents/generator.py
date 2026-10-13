@@ -1,0 +1,565 @@
+"""Generator (questioner) agent.
+
+Responsibilities
+----------------
+- Propose the next question given ``selected_action`` and RAG context.
+- Tag the question with the target dimension and rubric points, so the
+  evaluator can later score against the same bar.
+
+The full "iterative contract" described in the Plan (Generator <->
+Evaluator pre-negotiation) is *scaffolded* here via the
+``negotiate_rubric`` helper but kept optional for MVP simplicity. Phase
+4 flips it on by default in the ``ask_question`` node.
+"""
+from __future__ import annotations
+
+import re
+from typing import Any
+
+from app.wenjing.core.logging import get_logger
+from app.wenjing.core.settings import get_settings as get_settings
+from app.wenjing.engine.context import (
+    build_context_frame_for_generator,
+    frame_to_generator_messages,
+)
+
+# Backwards-compat re-exports. ``test_generator_equivalence.py`` patches
+# ``generator.build_strategy_index`` AND ``generator.get_settings``
+# side-by-side with the canonical ``app.engine.context.builder.*``
+# references so legacy inline assembly and the new slot-based builder
+# see the same strategy tail / settings flag. Keep these aliases even
+# though ``generate_question`` no longer calls them directly —
+# removing them breaks the equivalence coverage that locks the two
+# assembly paths to byte-identical prompts.
+from app.wenjing.memory.strategy_store import build_strategy_index as build_strategy_index
+
+from .llm_client import ChatMessage, call_chat, parse_json_response
+
+log = get_logger(__name__)
+
+
+_DIMENSION_LABELS: dict[str, str] = {
+    "technical_depth": "技术深度",
+    "problem_solving": "问题解决",
+    "communication": "沟通表达",
+    "system_design": "系统设计",
+    "coding_quality": "代码质量",
+    "project_experience": "项目经验",
+    "product_thinking": "产品思维",
+    "customer_discovery": "客户发现",
+    "architecture": "架构能力",
+    "behavioral": "行为面试",
+    "leadership": "技术领导力",
+}
+
+
+def _dimension_label(dimension: str) -> str:
+    return _DIMENSION_LABELS.get(dimension, dimension.replace("_", " "))
+
+
+def _resume_project_label(resume_anchor: dict[str, Any] | None) -> str:
+    if not resume_anchor:
+        return "你真实参与过的一个项目"
+    for key in ("project_name", "name", "label", "project"):
+        value = str(resume_anchor.get(key) or "").strip()
+        if value:
+            return value
+    return "你真实参与过的一个项目"
+
+
+def _skill_phrase(
+    *,
+    target_skills: list[str] | None,
+    resume_anchor: dict[str, Any] | None,
+    self_intro_profile: dict[str, Any] | None,
+) -> str:
+    candidates: list[Any] = []
+    candidates.extend(target_skills or [])
+    if resume_anchor:
+        candidates.extend(resume_anchor.get("tech_stack") or [])
+        candidates.extend(resume_anchor.get("skills") or [])
+    if self_intro_profile:
+        candidates.extend(self_intro_profile.get("emphasized_skills") or [])
+
+    seen: set[str] = set()
+    skills: list[str] = []
+    for item in candidates:
+        skill = str(item).strip()
+        key = _normalise_skill_key(skill)
+        if skill and key not in seen:
+            seen.add(key)
+            skills.append(_display_skill_alias(skill))
+    return "、".join(skills[:3]) or "关键技术选择"
+
+
+def _normalise_skill_key(skill: str) -> str:
+    compact = re.sub(r"[^a-z0-9+#.]+", "", skill.strip().lower())
+    aliases = {
+        "springsecurity": "springsecurity",
+        "springboot": "springboot",
+    }
+    return aliases.get(compact, compact)
+
+
+def _display_skill_alias(skill: str) -> str:
+    compact = re.sub(r"[^a-z0-9+#.]+", "", skill.strip().lower())
+    aliases = {
+        "springsecurity": "spring-security",
+        "springboot": "springboot",
+    }
+    return aliases.get(compact, skill.strip())
+
+
+def _question_seed_fields(question_seed_block: str) -> dict[str, str]:
+    fields: dict[str, str] = {}
+    prefixes = {
+        "Seed:": "title",
+        "Scenario:": "scenario",
+        "Question stem:": "question_stem",
+        "Prompt template:": "prompt_template",
+        "Skill tags:": "skill_tags",
+    }
+    for line in str(question_seed_block or "").splitlines():
+        stripped = line.strip()
+        for prefix, key in prefixes.items():
+            if stripped.startswith(prefix):
+                fields[key] = stripped[len(prefix) :].strip()
+                break
+    return fields
+
+
+_BROAD_SEED_SKILL_TAGS = {
+    "backend",
+    "backend_systems",
+    "java",
+    "junior",
+    "mid",
+    "senior",
+    "spring",
+}
+
+_SEED_TAG_ALIASES = {
+    "async": {"async", "异步"},
+    "backpressure": {"backpressure", "背压"},
+    "cache": {"cache", "缓存", "redis"},
+    "compensation": {"compensation", "补偿"},
+    "consistency": {"consistency", "一致"},
+    "database": {"database", "数据库"},
+    "idempotency": {"idempotency", "幂等"},
+    "mq": {"mq", "消息", "队列", "rabbitmq"},
+    "mysql": {"mysql", "数据库"},
+    "outbox": {"outbox"},
+    "payment": {"payment", "支付"},
+    "redis": {"redis", "缓存"},
+    "retry": {"retry", "重试"},
+    "transaction": {"transaction", "事务"},
+}
+
+_CJK_SEED_ANCHOR_TERMS = {
+    "背压",
+    "补偿",
+    "超卖",
+    "对账",
+    "订单",
+    "队列",
+    "事务",
+    "幂等",
+    "缓存",
+    "扣款",
+    "库存",
+    "流量",
+    "流水",
+    "秒杀",
+    "投递",
+    "通知",
+    "异步",
+    "支付",
+    "重放",
+    "重试",
+}
+
+
+def _seed_alignment_terms(question_seed_block: str) -> set[str]:
+    seed = _question_seed_fields(question_seed_block)
+    terms: set[str] = set()
+    for raw_tag in str(seed.get("skill_tags") or "").split(","):
+        tag = raw_tag.strip().lower()
+        if not tag or tag in _BROAD_SEED_SKILL_TAGS:
+            continue
+        parts = [tag]
+        parts.extend(part for part in re.split(r"[_\-\s]+", tag) if part)
+        for part in parts:
+            if part in _BROAD_SEED_SKILL_TAGS:
+                continue
+            aliases = _SEED_TAG_ALIASES.get(part)
+            if aliases:
+                terms.update(aliases)
+            elif len(part) >= 4:
+                terms.add(part)
+
+    seed_text = " ".join(
+        str(seed.get(key) or "")
+        for key in ("scenario", "question_stem", "prompt_template")
+    )
+    for term in _CJK_SEED_ANCHOR_TERMS:
+        if term in seed_text:
+            terms.add(term)
+    return {term.lower() for term in terms if str(term).strip()}
+
+
+def _looks_seed_misaligned(question: Any, question_seed_block: str) -> bool:
+    seed_terms = _seed_alignment_terms(question_seed_block)
+    if not question_seed_block or not seed_terms:
+        return False
+    text = str(question or "").lower()
+    hits = {term for term in seed_terms if term and term in text}
+    required_hits = 1 if len(seed_terms) <= 2 else 2
+    return len(hits) < required_hits
+
+
+def _seed_backed_fallback_question_text(
+    *,
+    question_seed_block: str,
+    dimension: str,
+    resume_anchor: dict[str, Any] | None,
+    self_intro_profile: dict[str, Any] | None,
+    target_skills: list[str] | None,
+) -> str:
+    seed = _question_seed_fields(question_seed_block)
+    stem = seed.get("question_stem")
+    if not stem:
+        return ""
+    dim = _dimension_label(dimension)
+    project = _resume_project_label(resume_anchor)
+    skills = _skill_phrase(
+        target_skills=target_skills,
+        resume_anchor=resume_anchor,
+        self_intro_profile=self_intro_profile,
+    )
+    scenario = seed.get("scenario", "")
+    scenario_part = f"场景背景是：{scenario}" if scenario else ""
+    return (
+        f"请结合「{project}」中与「{skills}」相关的{dim}场景，{scenario_part}"
+        f"{stem} 请说明你的具体设计、关键取舍、验证指标，以及如果压力更高会如何演进。"
+    )
+
+
+def _seed_backed_contract_from_hints(
+    contract_hints: dict[str, Any] | None,
+    *,
+    bar_level: str,
+) -> dict[str, Any] | None:
+    seed = (contract_hints or {}).get("question_seed")
+    if not isinstance(seed, dict):
+        return None
+    rubric = seed.get("rubric")
+    if not isinstance(rubric, dict):
+        return None
+    must_cover = [
+        str(item).strip()
+        for item in rubric.get("must_cover") or []
+        if str(item or "").strip()
+    ]
+    if not must_cover:
+        return None
+    additions = [
+        str(item).strip()
+        for item in seed.get("rubric_additions") or []
+        if str(item or "").strip()
+    ]
+    return {
+        "must_cover": must_cover,
+        "acceptable_if_missing": [],
+        "acceptance_checks": [
+            _seed_acceptance_check_text(item, required=True)
+            for item in must_cover
+        ]
+        + [
+            _seed_acceptance_check_text(item, required=False)
+            for item in additions
+        ],
+        "minimum_bar": str(rubric.get("minimum_bar") or "").strip()
+        or _seed_acceptance_check_text(", ".join(must_cover), required=True),
+        "review_focus": additions or must_cover,
+        "bar_level": bar_level,
+    }
+
+
+def _seed_acceptance_check_text(item: str, *, required: bool) -> str:
+    if _contains_cjk(item):
+        prefix = "回答需要" if required else "回答应补充"
+        return f"{prefix}{item}。"
+    prefix = "Answer must cover" if required else "Answer should address"
+    return f"{prefix} {item}."
+
+
+def _contains_cjk(value: str) -> bool:
+    return bool(re.search(r"[\u4e00-\u9fff]", str(value or "")))
+
+
+def _looks_like_generic_tradeoff_prompt(question: Any) -> bool:
+    text = str(question or "")
+    return all(
+        token in text
+        for token in (
+            "约束",
+            "备选方案",
+            "最终取舍",
+            "故障复盘",
+            "怎么演进",
+        )
+    )
+
+
+def _fallback_question_text(
+    *,
+    dimension: str,
+    resume_anchor: dict[str, Any] | None,
+    self_intro_profile: dict[str, Any] | None,
+    target_skills: list[str] | None,
+    target_difficulty: str,
+    probe_intent: str | None,
+) -> str:
+    dim = _dimension_label(dimension)
+    project = _resume_project_label(resume_anchor)
+    skills = _skill_phrase(
+        target_skills=target_skills,
+        resume_anchor=resume_anchor,
+        self_intro_profile=self_intro_profile,
+    )
+    if target_difficulty == "hard" or probe_intent in {
+        "architecture_challenge",
+        "performance_probe",
+        "debugging_probe",
+    }:
+        return (
+            f"请结合「{project}」中与「{skills}」相关的{dim}场景，说明当时的约束、"
+            "备选方案和最终取舍。再补充你如何用指标、故障复盘或上线结果验证这个选择，"
+            "以及如果规模或故障压力更高会怎么演进。"
+        )
+    if probe_intent == "evidence_probe":
+        return (
+            f"请结合「{project}」，用一个具体例子说明你如何体现{dim}能力。"
+            "重点讲你的个人贡献、可验证证据和最后结果。"
+        )
+    return (
+        f"请结合「{project}」中与「{skills}」相关的一次经历，说明你如何体现{dim}能力。"
+        "当时遇到什么问题，你做了哪些取舍，最后结果如何？"
+    )
+
+
+def _default_proposed_contract(
+    *,
+    dimension: str,
+    rubric_points: list[str],
+    refine_mode: bool,
+    target_difficulty: str = "medium",
+    target_skills: list[str] | None = None,
+    resume_anchor: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Heuristic contract to attach when the model returned none.
+
+    Keeps ``ask_question_node`` from having to special-case missing
+    ``proposed_contract`` fields; downstream ``negotiate_contract``
+    can still tighten/override it.
+    """
+    from app.wenjing.engine.workflow.difficulty_adapter import difficulty_to_bar_level
+
+    dim = _dimension_label(dimension)
+    project = _resume_project_label(resume_anchor)
+    skills = "、".join(target_skills or []) or "关键技术选择"
+    must_cover = list(rubric_points) or [dim]
+    for item in ("具体项目证据", "方案取舍", "结果验证"):
+        if item not in must_cover:
+            must_cover.append(item)
+    if refine_mode and "边界或故障场景" not in must_cover:
+        must_cover.append("边界或故障场景")
+    return {
+        "must_cover": must_cover,
+        "acceptable_if_missing": [],
+        "acceptance_checks": [
+            f"回答能围绕「{project}」或等价真实项目展开，并说明自己的职责。",
+            f"回答覆盖「{skills}」相关的关键技术点，且不是只罗列名词。",
+            "回答给出至少一个关键方案取舍，包含约束、备选方案或为什么这么选。",
+            "回答包含可验证证据，如指标、故障现象、上线结果、复盘结论或明确的验证方法。",
+        ],
+        "minimum_bar": "至少结合一个真实项目，说清个人贡献、关键取舍和可验证结果。",
+        "review_focus": ["项目证据", "方案取舍", "结果验证"],
+        "bar_level": difficulty_to_bar_level(target_difficulty),  # type: ignore[arg-type]
+    }
+
+
+def generate_question(
+    *,
+    dimension: str,
+    action: dict[str, Any],
+    job_spec: dict[str, Any],
+    candidate: dict[str, Any],
+    recent_qa: list[dict[str, Any]],
+    retrieval_block: str,
+    question_seed_block: str = "",
+    candidate_anchor_block: str = "",
+    resume_rag_block: str = "",
+    self_intro_rag_block: str = "",
+    strategy_block: str = "(no relevant strategy memories)",
+    skill_block: str = "(no relevant interview skills)",
+    avoid_patterns_block: str = "(no historical shallow patterns on this dimension)",
+    resume_anchor: dict[str, Any] | None = None,
+    self_intro_profile: dict[str, Any] | None = None,
+    qa_summary: str = "",
+    refine_mode: bool = False,
+    contract_hints: dict[str, Any] | None = None,
+    target_difficulty: str = "medium",
+    target_skills: list[str] | None = None,
+    probe_intent: str | None = None,
+    context_flags: dict[str, Any] | None = None,
+    history_section_override: str | None = None,
+) -> dict[str, Any]:
+    """Produce the next structured question payload.
+
+    Returns a dict shaped like the JSON schema above. The payload now
+    also includes a ``proposed_contract`` drafted by the generator.
+    ``ask_question_node`` will either use it as-is (simple plan) or
+    hand it to ``negotiate_contract_via_evaluator`` for a co-sign
+    (adaptive / deep_probe plans). Callers are responsible for
+    storing the payload into ``state["current_question"]``.
+
+    ``skill_block`` (``PLAN_SKILL_INJECTION``) is an optional block of
+    hand-authored interview skill cards that the
+    ``ask_question_node`` may splice in when
+    :attr:`Settings.enable_skill_injection` is ON. The default
+    placeholder keeps the prompt byte-stable when the flag is OFF.
+    """
+    frame = build_context_frame_for_generator(
+        dimension=dimension,
+        action=action,
+        job_spec=job_spec,
+        candidate=candidate,
+        recent_qa=recent_qa,
+        retrieval_block=retrieval_block,
+        question_seed_block=question_seed_block,
+        candidate_anchor_block=candidate_anchor_block,
+        resume_rag_block=resume_rag_block,
+        self_intro_rag_block=self_intro_rag_block,
+        strategy_block=strategy_block,
+        skill_block=skill_block,
+        avoid_patterns_block=avoid_patterns_block,
+        resume_anchor=resume_anchor,
+        self_intro_profile=self_intro_profile or {},
+        qa_summary=qa_summary,
+        refine_mode=refine_mode,
+        contract_hints=contract_hints,
+        target_difficulty=target_difficulty,
+        target_skills=target_skills or [],
+        probe_intent=probe_intent,
+        context_flags=context_flags,
+        history_section_override=history_section_override,
+    )
+    messages = frame_to_generator_messages(frame)
+    raw = call_chat(messages, json_mode=True, agent_role="generator")
+    data = parse_json_response(raw)
+    from app.wenjing.engine.workflow.difficulty_adapter import difficulty_to_bar_level
+
+    rubric_points = data.get("rubric_points") or ["depth", "clarity"]
+    proposed = data.get("proposed_contract") or _default_proposed_contract(
+        dimension=dimension,
+        rubric_points=rubric_points,
+        refine_mode=refine_mode,
+        target_difficulty=target_difficulty,
+        target_skills=target_skills,
+        resume_anchor=resume_anchor,
+    )
+    # Override bar_level to match the adaptive target_difficulty
+    proposed["bar_level"] = difficulty_to_bar_level(target_difficulty)  # type: ignore[arg-type]
+    model_question = data.get("question")
+    seed_fallback = _seed_backed_fallback_question_text(
+        question_seed_block=question_seed_block,
+        dimension=dimension,
+        resume_anchor=resume_anchor,
+        self_intro_profile=self_intro_profile,
+        target_skills=target_skills,
+    )
+    used_seed_fallback = bool(
+        seed_fallback
+        and (
+            not model_question
+            or _looks_like_generic_tradeoff_prompt(model_question)
+            or _looks_seed_misaligned(model_question, question_seed_block)
+        )
+    )
+    question_text = (
+        seed_fallback
+        if used_seed_fallback
+        else model_question
+        or _fallback_question_text(
+            dimension=dimension,
+            resume_anchor=resume_anchor,
+            self_intro_profile=self_intro_profile,
+            target_skills=target_skills,
+            target_difficulty=target_difficulty,
+            probe_intent=probe_intent,
+        )
+    )
+    if used_seed_fallback:
+        seed_contract = _seed_backed_contract_from_hints(
+            contract_hints,
+            bar_level=difficulty_to_bar_level(target_difficulty),
+        )
+        if seed_contract:
+            proposed = seed_contract
+    question = {
+        "question": question_text,
+        "dimension": data.get("dimension", dimension),
+        "rubric_points": rubric_points,
+        "difficulty": target_difficulty,
+        "rationale": data.get("rationale", ""),
+        "proposed_contract": proposed,
+    }
+    if used_seed_fallback:
+        question["seed_backed_fallback"] = True
+        if model_question and _looks_seed_misaligned(model_question, question_seed_block):
+            question["seed_backed_fallback_reason"] = "structured_seed_alignment"
+    if resume_anchor:
+        question["resume_anchor"] = resume_anchor
+    log.debug(
+        "generator produced question for dim=%s: %s",
+        dimension,
+        question["question"][:80],
+    )
+    return question
+
+
+_RUBRIC_NEG_TASK = """Before asking this question, agree with the evaluator
+on what makes a "strong" answer. Reply as JSON:
+
+{{
+  "rubric_points": ["..."],
+  "minimum_bar": "one-sentence description of the pass threshold"
+}}
+
+DIMENSION = {dimension}
+QUESTION = {question}
+"""
+
+
+def negotiate_rubric(
+    *,
+    dimension: str,
+    question: str,
+) -> dict[str, Any]:
+    """Light-weight stand-in for the iterative contract negotiation.
+
+    Calling this before emitting the question lets the evaluator grade
+    against a pre-committed yardstick instead of making one up after
+    the fact. Returns a ``{rubric_points, minimum_bar}`` dict.
+    """
+    messages = [
+        ChatMessage("system", "You co-design interview rubrics with another agent."),
+        ChatMessage("user", _RUBRIC_NEG_TASK.format(dimension=dimension, question=question)),
+    ]
+    raw = call_chat(messages, json_mode=True, agent_role="rubric_negotiator")
+    data = parse_json_response(raw)
+    return {
+        "rubric_points": data.get("rubric_points") or ["depth", "clarity"],
+        "minimum_bar": data.get("minimum_bar", "Covers the core concept with one concrete example."),
+    }

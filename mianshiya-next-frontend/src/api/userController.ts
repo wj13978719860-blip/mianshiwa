@@ -140,7 +140,8 @@ export async function userLoginUsingPost(
   body: API.UserLoginRequest,
   options?: { [key: string]: any },
 ) {
-  return request<API.BaseResponseLoginUserVO_>('/api/user/login', {
+  // 全局响应拦截器已解包 AxiosResponse，登录页拿到的是业务响应本身。
+  return request<API.BaseResponseLoginUserVO_, API.BaseResponseLoginUserVO_>('/api/user/login', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

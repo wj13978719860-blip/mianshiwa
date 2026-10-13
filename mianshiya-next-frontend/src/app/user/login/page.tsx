@@ -13,6 +13,7 @@ import { ProForm } from "@ant-design/pro-form/lib";
 import { useRouter } from "next/navigation";
 import './index.css';
 import { BRAND_NAME, BRAND_DESCRIPTION, BRAND_LOGO } from "@/constants/brand";
+import { safeLoginRedirect } from "@/libs/safeLoginRedirect";
 
 /**
  * 用户登录页面
@@ -33,11 +34,13 @@ const UserLoginPage: React.FC = () => {
         message.success("登录成功");
         // 保存用户登录状态
         dispatch(setLoginUser(res.data));
-        router.replace("/");
+        // 登录后继续原来的面试或题目，返回路径必须属于本站。
+        const redirect = new URLSearchParams(window.location.search).get("redirect");
+        router.replace(safeLoginRedirect(redirect, window.location.origin));
         form.resetFields();
       }
     } catch (e) {
-      message.error("登录失败，" + e.message);
+      message.error("登录失败，" + (e instanceof Error ? e.message : "请稍后重试"));
     }
   };
 

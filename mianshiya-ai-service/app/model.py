@@ -31,6 +31,13 @@ class ModelGateway:
 
     async def complete(self, message):
         """固定系统提示词和输出预算；测试入口不开放任意角色、工具或模型覆盖。"""
+        return await self.chat([
+            {"role": "system", "content": "你是面试蛙的技术面试助手。请用中文简洁、准确地回答问题；不确定时说明不确定。"},
+            {"role": "user", "content": message},
+        ], max_tokens=self.settings.model_max_tokens)
+
+    async def chat(self, messages, *, max_tokens=1536, json_mode=False):
+        """供服务端面试节点使用；角色及提示词由引擎构造，不接受浏览器任意覆盖。"""
         config = self.settings
         if not config.model_enabled:
             raise ModelFailure("MODEL_NOT_CONFIGURED", 503)
@@ -39,14 +46,16 @@ class ModelGateway:
             raise ModelFailure("MODEL_BUSY", 503)
         async with self.slots:
             try:
+                body = {"model": config.model_name, "stream": False,
+                        "max_tokens": max_tokens, "messages": messages}
+                if json_mode:
+                    # 资料解析必须是JSON对象，协议层约束能避免自然语言和代码围栏。
+                    body["response_format"] = {"type": "json_object"}
                 # 总预算包含连接、响应读取和解析，不能被零散分块无限延长。
                 async with asyncio.timeout(config.model_timeout_seconds):
                     async with self.client.stream("POST", config.model_base_url + "/chat/completions",
                         headers={"Authorization": "Bearer " + config.model_api_key},
-                        json={"model": config.model_name, "stream": False,
-                              "max_tokens": config.model_max_tokens,
-                              "messages": [{"role": "system", "content": "你是面试蛙的技术面试助手。请用中文简洁、准确地回答问题；不确定时说明不确定。"},
-                                           {"role": "user", "content": message}]}) as response:
+                        json=body) as response:
                         if response.status_code in {401, 403}:
                             raise ModelFailure("MODEL_AUTH_FAILED")
                         if response.status_code == 429:
@@ -63,8 +72,10 @@ class ModelGateway:
                             if len(chunks) > 1024 * 1024:
                                 raise ModelFailure("MODEL_PROTOCOL_ERROR")
                         data = json.loads(chunks)
+                        if data["choices"][0].get("finish_reason") == "length":
+                            raise ModelFailure("MODEL_OUTPUT_TRUNCATED")
                         reply = data["choices"][0]["message"]["content"]
-                        if not isinstance(reply, str) or not reply.strip() or len(reply) > 16384:
+                        if not isinstance(reply, str) or not reply.strip() or len(reply) > 32768:
                             raise ModelFailure("MODEL_PROTOCOL_ERROR")
                         return reply
             except (TimeoutError, httpx.TimeoutException):

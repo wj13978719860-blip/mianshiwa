@@ -17,8 +17,12 @@ export const menus = [
     name: "题目",
   },
   {
-    path: "/mockInterview/add",
+    path: "/interview/setup",
     name: "AI 模拟面试",
+  },
+  {
+    path: "/interview/history",
+    name: "我的面试",
   },
   {
     path: "/admin",
