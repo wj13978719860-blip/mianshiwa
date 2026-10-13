@@ -1,4 +1,5 @@
 "use server";
+import { getErrorMessage } from "@/libs/error";
 import { Avatar, Button, Card, message } from "antd";
 import { getQuestionBankVoByIdUsingGet } from "@/api/questionBankController";
 import Meta from "antd/es/card/Meta";
@@ -12,20 +13,20 @@ import { getBrandImage } from "@/constants/brand";
  * 题库详情页
  * @constructor
  */
-export default async function BankPage({ params }) {
+export default async function BankPage({ params }: { params: { questionBankId: string } }) {
   const { questionBankId } = params;
   let bank = undefined;
 
   try {
     const res = await getQuestionBankVoByIdUsingGet({
-      id: questionBankId,
+      id: Number(questionBankId),
       needQueryQuestionList: true,
       // 可以自行扩展为分页实现
       pageSize: 200,
     });
     bank = res.data;
   } catch (e) {
-    console.error("获取题库详情失败，" + e.message);
+    console.error("获取题库详情失败，" + getErrorMessage(e));
   }
 
   // 错误处理
@@ -67,7 +68,7 @@ export default async function BankPage({ params }) {
       </Card>
       <div style={{ marginBottom: 16 }} />
       <QuestionList
-        questionBankId={questionBankId}
+        questionBankId={Number(questionBankId)}
         questionList={bank.questionPage?.records ?? []}
         cardTitle={`题目列表（${bank.questionPage?.total || 0}）`}
       />

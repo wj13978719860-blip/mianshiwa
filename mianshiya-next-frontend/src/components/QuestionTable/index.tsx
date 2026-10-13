@@ -21,7 +21,7 @@ interface Props {
  *
  * @constructor
  */
-const QuestionTable: React.FC = (props: Props) => {
+const QuestionTable: React.FC<Props> = (props) => {
   const { defaultQuestionList, defaultTotal, defaultSearchParams = {} } = props;
   const actionRef = useRef<ActionType>();
   // 题目列表
@@ -90,8 +90,8 @@ const QuestionTable: React.FC = (props: Props) => {
           if (init) {
             setInit(false);
             // 如果已有外层传来的默认数据，无需再次查询
-            if (defaultQuestionList && defaultTotal) {
-              return;
+            if (defaultQuestionList) {
+              return { success: true, data: defaultQuestionList, total: defaultTotal ?? 0 };
             }
           }
 

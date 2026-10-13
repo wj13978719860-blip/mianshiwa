@@ -152,6 +152,9 @@ class RedisResumeParseCache:
         self._redis_client = Redis.from_url(
             self._redis_url or get_settings().redis_url,
             decode_responses=True,
+            # 缓存失败仍直接解析；连接等待不能拖慢简历上传。
+            socket_connect_timeout=1.0,
+            socket_timeout=2.0,
         )
         return self._redis_client
 

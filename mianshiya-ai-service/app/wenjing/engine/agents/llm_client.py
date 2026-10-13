@@ -107,6 +107,18 @@ class LLMFatal(LLMError):  # noqa: N818
     """Unrecoverable error: bad credentials, malformed request, etc."""
 
 
+class LLMOutputTruncated(LLMFatal):
+    """模型用尽输出预算；不把残缺 JSON 当作完整结果继续评分。"""
+
+
+def _openai_response_content(resp: Any) -> str:
+    """统一检查兼容协议的终止原因，异常只记录原因、不包含用户材料。"""
+    choice = resp.choices[0]
+    if getattr(choice, "finish_reason", None) == "length":
+        raise LLMOutputTruncated("模型输出超过 token 上限，请调整该节点的输出预算")
+    return choice.message.content or ""
+
+
 # ---------------------------------------------------------------------------
 # Provider SDK client cache
 # ---------------------------------------------------------------------------
@@ -1317,7 +1329,7 @@ def _call_openai(
             max_retries=client_max_retries,
         )
         raise
-    content = resp.choices[0].message.content or ""
+    content = _openai_response_content(resp)
     usage = _extract_openai_usage(
         resp,
         content=content,
@@ -1418,7 +1430,7 @@ def _call_openai_compatible(
             max_retries=client_max_retries,
         )
         raise
-    content = resp.choices[0].message.content or ""
+    content = _openai_response_content(resp)
     usage = _extract_openai_usage(
         resp,
         content=content,

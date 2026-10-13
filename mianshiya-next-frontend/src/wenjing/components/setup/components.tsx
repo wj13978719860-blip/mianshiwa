@@ -11,6 +11,7 @@ import {
   Input,
   Row,
   Segmented,
+  Select,
   Space,
   Spin,
   Steps,
@@ -64,6 +65,7 @@ import {
   resumeParseStatusMessage,
   splitCsv,
 } from "./helpers";
+import styles from "./components.module.css";
 
 const { Text, Paragraph } = Typography;
 const ACCENT = "#10b981";
@@ -385,6 +387,14 @@ export function ResumeUploader({
 
 type PreviewTab = "summary" | "skills" | "highlights" | "projects" | "focus";
 
+// 删除列表项后不能直接用“列表长度 + 1”生成 ID，否则会与仍存在的卡片重复。
+function nextResumeItemId(prefix: "proj" | "focus", items: { id: string }[]): string {
+  const existingIds = new Set(items.map((item) => item.id));
+  let nextIndex = items.length + 1;
+  while (existingIds.has(`${prefix}-${nextIndex}`)) nextIndex += 1;
+  return `${prefix}-${nextIndex}`;
+}
+
 export function ResumePreviewCard({
   candidateProfile,
   summary,
@@ -433,7 +443,7 @@ export function ResumePreviewCard({
     onChangeProjects([
       ...projects,
       {
-        id: `proj-${projects.length + 1}`,
+        id: nextResumeItemId("proj", projects),
         name: "",
         role: "",
         tech_stack: [],
@@ -452,7 +462,7 @@ export function ResumePreviewCard({
     onChangeFocusAreas([
       ...focusAreas,
       {
-        id: `focus-${focusAreas.length + 1}`,
+        id: nextResumeItemId("focus", focusAreas),
         label: "",
         project_id: null,
         dimensions: ["project_experience", "technical_depth"],
@@ -630,39 +640,65 @@ export function ResumePreviewCard({
         </Space>
       )}
       {tab === "focus" && (
-        <Space direction="vertical" size={12} style={{ width: "100%" }}>
+        <div className={styles.focusSection}>
           <Text type="secondary" style={{ fontSize: 12 }}>
             这些是 AI 从简历项目里整理出的考察重点，最多 20 个重点。留空也可以，系统会按方向和 JD 兜底。
           </Text>
-          {focusAreas.map((focus, idx) => (
-            <Card key={focus.id || idx} size="small">
-              <Space direction="vertical" size={8} style={{ width: "100%" }}>
-                <Flex gap={8} align="center">
-                  <Input
+          {/* 网格使用 minmax(0, 1fr)，长标题和技能标签不会把卡片撑出容器。 */}
+          <div className={styles.focusGrid}>
+            {focusAreas.map((focus, idx) => (
+              <Card key={focus.id || idx} size="small" className={styles.focusCard}>
+                <div className={styles.focusHeader}>
+                  <Text strong>考察重点 {idx + 1}</Text>
+                  <Button
+                    type="text"
+                    size="small"
+                    icon={<CloseOutlined />}
+                    disabled={readOnly}
+                    onClick={() => onChangeFocusAreas(focusAreas.filter((_, i) => i !== idx))}
+                    aria-label={`删除重点 ${idx + 1}`}
+                    className={styles.focusDelete}
+                  />
+                </div>
+                <div className={styles.focusField}>
+                  <Text type="secondary" className={styles.focusLabel}>重点内容</Text>
+                  <Input.TextArea
                     value={focus.label}
                     onChange={(e) => updateFocus(idx, { label: e.target.value })}
                     disabled={readOnly}
                     maxLength={RESUME_FOCUS_LABEL_MAX_LENGTH}
-                    placeholder="考察重点，例如：支付迁移中的幂等和一致性"
+                    autoSize={{ minRows: 2, maxRows: 4 }}
+                    placeholder="例如：支付迁移中的幂等和一致性"
+                    aria-label={`重点 ${idx + 1} 内容`}
+                    className={styles.focusInput}
                   />
-                  <Button
-                    type="text"
-                    icon={<CloseOutlined />}
+                </div>
+                <div className={styles.focusField}>
+                  <Text type="secondary" className={styles.focusLabel}>关联技能</Text>
+                  {/* 标签输入保留正在编辑的文字，避免 split/join 回显立即吞掉逗号。 */}
+                  <Select<string[]>
+                    mode="tags"
+                    value={focus.skills ?? []}
+                    onChange={(skills) => updateFocus(idx, {
+                      skills: skills
+                        .map((skill) => skill.trim().slice(0, CANDIDATE_SKILL_MAX_LENGTH))
+                        .filter(Boolean)
+                        .slice(0, CANDIDATE_SKILLS_MAX_COUNT),
+                    })}
+                    tokenSeparators={[",", "，", "\n"]}
+                    maxCount={CANDIDATE_SKILLS_MAX_COUNT}
                     disabled={readOnly}
-                    onClick={() => onChangeFocusAreas(focusAreas.filter((_, i) => i !== idx))}
-                    aria-label="删除重点"
+                    placeholder="输入技能后按回车或逗号确认"
+                    aria-label={`重点 ${idx + 1} 关联技能`}
+                    className={styles.focusSkills}
                   />
-                </Flex>
-                <Input
-                  value={joinCsv(focus.skills ?? [])}
-                  onChange={(e) => updateFocus(idx, { skills: splitCsv(e.target.value) })}
-                  disabled={readOnly}
-                  maxLength={CANDIDATE_SKILLS_MAX_COUNT * (CANDIDATE_SKILL_MAX_LENGTH + 2)}
-                  placeholder="关联技能，用逗号分隔"
-                />
-              </Space>
-            </Card>
-          ))}
+                  <Text type="secondary" className={styles.focusHelp}>
+                    支持多个技能；按回车或输入逗号添加。
+                  </Text>
+                </div>
+              </Card>
+            ))}
+          </div>
           <Button
             size="small"
             onClick={addFocusArea}
@@ -683,7 +719,7 @@ export function ResumePreviewCard({
               }
             />
           )}
-        </Space>
+        </div>
       )}
     </Card>
   );

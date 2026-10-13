@@ -1,22 +1,20 @@
 # 面试蛙独立 AI 服务
 
-本目录提供 Python 3.11 / FastAPI 服务，注册现有 Nacos，由 Java 后端通过 OpenFeign 按服务名调用。包含通信探测、管理员模型调试和新的文本模拟面试。模型使用 OpenAI Chat Completions 兼容协议；原模拟面试的 Ark 创建/聊天入口已停用，其他尚未迁移的 AI 业务不受本次替换影响。
+本目录提供 Python 3.11 / FastAPI 服务，注册现有 Nacos，由 Java 后端按服务名调用。包含通信探测、管理员模型调试和 AI 模拟面试（问镜）。模型使用 OpenAI Chat Completions 兼容协议。
 
-## 新模拟面试
+## AI 模拟面试（问镜）
 
-用户仍从 `/mockInterview/add` 进入。设置、答题、追问、评价、报告和记录均通过 Java `/api/ai/interviews` 调用 Python；用户不直接访问内部接口。交互参考问镜，页面保留面试蛙的 Next.js / Ant Design 风格。
+`app/wenjing/` 复用 [Agentic_Interviewer（问镜）](https://github.com/liuhan-agent/Agentic_Interviewer) 后端（FastAPI + LangGraph），保留核心流程，将 PostgreSQL 换成 MySQL，pgvector/Chroma 换成 Elasticsearch，并修复本机联调发现的历史恢复、跳题收尾和模型输出预算问题。适配代码集中在 `app/wenjing/adapters/` 和 `scripts/sync-wenjing.py` 的 ADAPTED 列表里；`python scripts/sync-wenjing.py --check` 校验其余文件与上游一致。上游测试在 `wenjing/tests/`，适配层的 MySQL/ES 集成测试在 `wenjing/tests/adapters/`（设置 `AI_MYSQL_INTEGRATION=true` / `AI_ES_INTEGRATION=true` 才运行）。
 
-`app/interview/workflow.py` 是 LangGraph 面试图，`contracts.py` 是输入和评价结构，`service.py` 保存命令并在后台执行，`routes.py` 只负责快速受理及查询。会话状态和检查点都存入独立 MySQL 库，题目与参考答案在创建时冻结。每题最多一次追问，最多十道主问题；跳过或提前结束的未答题不会被评分。
+最新数据、Redis 配置、草稿兼容影响与真实联调结果见 [文字面试补齐与验收](../docs/问镜文字面试补齐与验收.md)。本机已导入问镜自带的 162 个种子、324 个变体；公共知识文档仍缺资料，不把 ES 空索引冒充已启用的知识库。
 
-在私有 `.runtime/ai-service.env` 配置 `.env.example` 中的 `AI_INTERVIEW_ENABLED` 和 `AI_MYSQL_*`，并启用已配置的对话模型。数据库需提前创建，账号只授予该 AI 库的 SELECT、INSERT、UPDATE、DELETE、CREATE、ALTER、INDEX 权限。首次启动创建检查点及面试表；配置或初始化失败时不回退内存。
+请求链路：浏览器 `/api/ai/wenjing/api/v1/**` → Java `WenjingProxyController`（白名单、注入 `X-Owner-Id` 与内部凭证、拒绝 `llm_config`）→ Python `/internal/wenjing/api/v1/**`。面试网关通过 Nacos 发现实例并以 HTTP 转发；管理员探测与模型调试使用 OpenFeign。当前只开放文字面试闭环：问镜自身的注册登录、管理端、语音、积分接口不挂载，登录沿用 Java。前端页面在 `mianshiya-next-frontend/src/app/interview/`，数据层 `src/wenjing/lib/` 由 `scripts/sync-wenjing-frontend.py` 从上游同步。BM25 保留问镜 Python 实现，ES 承接向量存储。
 
-当前执行器只支持单个 Python 实例，通过独立库的 MySQL 命名锁拒绝重复执行器启动。启动会把中断的执行明确标记为失败，用户可显式重试；模型调用成功但结果落库前中断时，不能承诺费用只产生一次。更多改动及真实验收见 [前后端重建验收记录](../docs/AI模拟面试重建-前后端验收.md)。
-
-v2面试已接入ES BM25＋DashScope `text-embedding-v3`（1024维）向量召回，RRF融合后供导演选题；检索限定于本场选定题库的冻结快照。原v1检查点仍按旧图恢复。当前尚未实现自主查询改写、工具选择和完整Agentic RAG，详细状态见 `docs/AI面试问镜对齐-第一批实现与验收.md`。
+在私有 `.runtime/ai-service.env` 配置 `.env.example` 中的 `WENJING_ENABLED`、`WENJING_MYSQL_DATABASE`、`AI_MYSQL_*`、`AI_ES_URL` 和 `EMBEDDING_*`，并启用已配置的对话模型。数据库需提前创建（utf8mb4_bin），账号只授予该库的 SELECT、INSERT、UPDATE、DELETE、CREATE、ALTER、INDEX、REFERENCES 权限；首次启动自动建表。
 
 ## 建议的代码阅读顺序
 
-先看 Java 入口如何发请求，再看 Python 如何接收，最后看注册与启动。每个源文件已补充中文注释。
+先看 Java 入口如何发请求，再看 Python 如何接收，最后看注册与启动。关键适配逻辑补充中文注释；下面以管理员通信探测为例，正式面试阅读 `WenjingProxyController`、`app/wenjing/adapters/` 和 `engine/workflow/`。
 
 ```text
 管理员发请求
@@ -104,7 +102,7 @@ Nacos 控制台的 public / DEFAULT_GROUP 下应存在 `mianshiya-next-backend:8
 {"message":"hello"}
 ```
 
-预期 `code=0`，`data.service=mianshiya-ai-service`，`data.mode=stub`，`data.reply=AI service is reachable`，响应头 `X-Request-Id` 与 `data.requestId` 一致。前端页面本版没有新增按钮。
+预期 `code=0`，`data.service=mianshiya-ai-service`，`data.mode=stub`，`data.reply=AI service is reachable`，响应头 `X-Request-Id` 与 `data.requestId` 一致。此接口仅检查通信；正式前端入口为 `/interview/setup` 和 `/interview/history`，管理员模型调试入口为 `/admin/ai`。
 
 游客返回 40100，普通用户返回 40101；Java 沿用项目原约定，HTTP 200 不代表业务成功。参数错误为 40000，远程失败或接入关闭为 50001，失败的 `data=null`。Python 内部接口使用真实的 HTTP 401 / 422 / 503 / 500。
 
@@ -211,20 +209,6 @@ $env:PYTHONPATH = (Join-Path $PWD 'mianshiya-ai-service')
 
 这份备份只存在于实施机器。其他环境部署前也需保留自己的基线产物、配置和 Git 版本。源码回退应从已记录基线另建 checkout 构建，不覆盖后续改动，不重置数据库或中间件数据卷。
 
-## 正式面试的ES混合检索配置
+## 问镜的向量配置
 
-在被Git忽略的 `.runtime/ai-service.env` 配置：
-
-```dotenv
-AI_RETRIEVAL_MODE=hybrid
-AI_ES_URL=http://127.0.0.1:9201
-AI_ES_KNOWLEDGE_INDEX=mianshiwa-ai-questions-v3-1024
-EMBEDDING_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
-EMBEDDING_MODEL=text-embedding-v3
-EMBEDDING_DIMENSIONS=1024
-EMBEDDING_API_KEY=
-```
-
-填写独立DashScope Key后重启Python。`off`关闭ES接入；`bm25`只走关键词；`hybrid`必须填写真实Embedding Key，不自动降级。模型或维度变更建议使用新AI索引，服务拒绝覆盖冲突映射。ES 7.17的脚本向量评分是精确检索，当前按至多100条会话候选过滤，不承诺大规模近似kNN性能。
-
-首次出题会同步所选题库快照并向量化，可能比后续命中缓存慢；失败会返回稳定的 `EMBEDDING_*`、`KNOWLEDGE_*`错误，Key和供应商正文不回传浏览器。检索轨迹及评分合同只保存在私有检查点。
+问镜的知识库和简历锚点向量写入 ES，Embedding 使用 OpenAI 兼容接口（默认 DashScope `text-embedding-v3`，1024 维）。索引名带维度后缀，维度变更会写入新索引而不是覆盖旧映射。未配置 `AI_ES_URL` 时（单测/开发）锚点向量只保存在进程内存里，生产启动会直接失败。

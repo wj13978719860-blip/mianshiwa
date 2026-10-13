@@ -1,3 +1,4 @@
+import { getErrorMessage } from "@/libs/error";
 import React, { useEffect, useState } from "react";
 import ReactECharts from "echarts-for-react";
 import dayjs from "dayjs";
@@ -26,9 +27,9 @@ const CalendarChart = (props: Props) => {
       const res = await getUserSignInRecordUsingGet({
         year,
       });
-      setDataList(res.data);
+      setDataList(res.data ?? []);
     } catch (e) {
-      message.error("获取刷题签到记录失败，" + e.message);
+      message.error("获取刷题签到记录失败，" + getErrorMessage(e));
     }
   };
 

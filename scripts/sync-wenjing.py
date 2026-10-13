@@ -50,8 +50,19 @@ ADAPTED = {
     "app/services/user_credits.py",
     # MySQL 不支持 UPDATE ... RETURNING。
     "app/services/resume_parse_artifacts.py",
+    # 修复上游恢复历史的轮次错位：优先问答事实，不能用上一题冒充当前题。
+    "app/services/session_replay.py",
     # 新增 mysql/ES/网关配置，并映射面试蛙已有环境变量。
     "app/core/settings.py",
+    # Redis 跨进程时间基准、有限连接超时；业务算法保持上游实现。
+    "app/core/rate_limit.py",
+    "app/services/resume_parse_cache.py",
+    # 训练计划独立输出预算、兼容协议截断检查，以及跳题事实持久化。
+    "app/engine/agents/coach.py",
+    "app/engine/agents/llm_client.py",
+    "app/engine/workflow/nodes/skip_question.py",
+    # 经验学习排除跳题、无评分和模型降级，避免空分数导致面试收尾失败。
+    "app/engine/workflow/nodes/experience_extractor.py",
     # 向量维度断言从 pgvector 列改为 ES 锚点索引。
     "tests/unit/test_session_anchor_chunk_model.py",
 }

@@ -123,6 +123,9 @@ class Settings(BaseSettings):
     # Give it a generous budget since output quality matters more
     # than latency here.
     coach_llm_timeout_seconds: float = 90.0
+    # 训练计划包含诊断、练习和阶段目标，不能沿用短问答的 2048 token 上限。
+    # 只提高 Coach 的输出预算，避免所有实时节点都增加耗时与费用。
+    coach_llm_max_tokens: int = 8192
     # Resume upload is an interactive setup step. If BYOK resume_parser
     # refinement is slow, return the heuristic parse instead of making
     # the browser wait until its upload request times out.

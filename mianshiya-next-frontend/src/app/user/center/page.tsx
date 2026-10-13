@@ -47,13 +47,13 @@ export default function UserCenterPage() {
             <Tag
               color={user.userRole === USER_ROLE_ENUM.ADMIN ? "gold" : "grey"}
             >
-              {USER_ROLE_TEXT_MAP[user.userRole]}
+              {USER_ROLE_TEXT_MAP[user.userRole ?? ""]}
             </Tag>
             <Paragraph type="secondary" style={{ marginTop: 8 }}>
               注册日期：{dayjs(user.createTime).format("YYYY-MM-DD")}
             </Paragraph>
             <Paragraph type="secondary" style={{ marginTop: 8 }} copyable={{
-              text: user.id
+              text: String(user.id ?? "")
             }}>
               我的 id：{user.id}
             </Paragraph>

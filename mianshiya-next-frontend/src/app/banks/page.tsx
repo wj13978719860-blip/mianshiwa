@@ -1,4 +1,5 @@
 "use server";
+import { getErrorMessage } from "@/libs/error";
 import Title from "antd/es/typography/Title";
 import { message } from "antd";
 import { listQuestionBankVoByPageUsingPost } from "@/api/questionBankController";
@@ -10,7 +11,7 @@ import "./index.css";
  * @constructor
  */
 export default async function BanksPage() {
-  let questionBankList = [];
+  let questionBankList: API.QuestionBankVO[] = [];
   // 题库数量不多，直接全量获取
   const pageSize = 200;
   try {
@@ -19,9 +20,9 @@ export default async function BanksPage() {
       sortField: "createTime",
       sortOrder: "descend",
     });
-    questionBankList = res.data.records ?? [];
+    questionBankList = res.data?.records ?? [];
   } catch (e) {
-    message.error("获取题库列表失败，" + e.message);
+    console.error("获取题库列表失败，" + getErrorMessage(e));
   }
 
   return (

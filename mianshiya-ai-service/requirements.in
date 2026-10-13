@@ -24,5 +24,7 @@ langchain-openai>=0.3,<2
 langsmith>=0.3,<1
 APScheduler>=3.10,<4
 prometheus-client>=0.21,<1
+# 复用项目现有 Redis：简历解析缓存及共享限流，不再依赖单进程内存。
+redis>=5.2,<6
 python-multipart>=0.0.17,<1
 websockets>=13.1,<17

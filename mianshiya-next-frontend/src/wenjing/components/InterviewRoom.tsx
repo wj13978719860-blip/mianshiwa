@@ -32,9 +32,11 @@ import {
   friendlyConnectionMessage,
   isFinalFormalTurn,
   latestAnsweredFormalTurnIdx,
+  mergeRestoredQaHistory,
+  qaEntryIdentity,
   qaEntryMatchesEvaluation,
+  recordQaAnswer,
   restoredTurnToQaEntry,
-  sameQaEntry,
   visibleTurnIdx,
   type QaEntry,
 } from "./room/helpers";
@@ -105,15 +107,7 @@ export default function InterviewRoom({ sessionId }: { sessionId: string }) {
       restored,
       currentTurnIdxForDisplay,
     );
-    setHistory((prev) => {
-      const openEntry = prev.find((entry) => entry.answer === null);
-      const answered = prev.filter((entry) => entry.answer !== null);
-      const alreadyRestored =
-        answered.length === priorRestored.length &&
-        answered.every((entry, index) => sameQaEntry(entry, priorRestored[index]));
-      if (alreadyRestored) return prev;
-      return openEntry ? [...priorRestored, openEntry] : priorRestored;
-    });
+    setHistory((prev) => mergeRestoredQaHistory(prev, priorRestored));
   }, [state.phase, state.question, state.restoredHistory, state.turnIdx]);
 
   useEffect(() => {
@@ -211,16 +205,7 @@ export default function InterviewRoom({ sessionId }: { sessionId: string }) {
       await submitAnswer(sessionId, text, state.turnIdx);
       setReauthRequired(false);
       setPaused(false);
-      setHistory((prev) => {
-        if (prev.length === 0) return prev;
-        const next = prev.slice();
-        next[next.length - 1] = {
-          ...next[next.length - 1],
-          answer: text,
-          evaluation: undefined,
-        };
-        return next;
-      });
+      setHistory((prev) => recordQaAnswer(prev, state.question, state.turnIdx!, text));
       setLastSubmittedTurn(state.turnIdx ?? null);
       setFinalTurnSubmitted(submittedWasFinal);
       afterAnswerSubmitted();
@@ -261,15 +246,7 @@ export default function InterviewRoom({ sessionId }: { sessionId: string }) {
     });
     try {
       await skipQuestion(sessionId, state.turnIdx, "candidate_skip");
-      setHistory((prev) => {
-        if (prev.length === 0) return prev;
-        const next = prev.slice();
-        next[next.length - 1] = {
-          ...next[next.length - 1],
-          answer: "已跳过本题",
-        };
-        return next;
-      });
+      setHistory((prev) => recordQaAnswer(prev, state.question, state.turnIdx!, "已跳过本题"));
       setPaused(false);
       setLastSubmittedTurn(state.turnIdx ?? null);
       setFinalTurnSubmitted(skippedWasFinal);
@@ -353,7 +330,7 @@ export default function InterviewRoom({ sessionId }: { sessionId: string }) {
 
           {history.map((t, idx) => (
             <QaBubble
-              key={`turn-${idx}`}
+              key={qaEntryIdentity(t)}
               entry={t}
               isCurrent={idx === history.length - 1 && state.phase === "waiting_for_answer"}
               showTurnFeedback={!(state.phase === "loading" && idx === history.length - 1)}

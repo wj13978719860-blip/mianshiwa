@@ -9,7 +9,9 @@ from app.wenjing.engine.workflow.depth_followup import (
     sanitize_depth_followup_metadata,
 )
 from app.wenjing.engine.workflow.state import InterviewState
+from app.wenjing.models import get_session
 from app.wenjing.services.question_selector import build_question_history_selection_artifacts
+from app.wenjing.services.strategy_learning_facts import upsert_interview_turn
 
 log = get_logger(__name__)
 
@@ -74,6 +76,34 @@ def skip_question_node(state: InterviewState) -> dict[str, Any]:
     history_selection_artifacts = build_question_history_selection_artifacts(question)
     if history_selection_artifacts:
         qa_entry["selection_artifacts"] = history_selection_artifacts
+
+    # 回放优先读取事实表，跳题也必须留下原题干；空答案和空分数不能冒充作答。
+    # 自我介绍不属于正式题，不能占用正式第 0 轮的唯一键。
+    session_id = str(state.get("session_id") or "")
+    if session_id and not is_self_intro:
+        anchor = question.get("resume_anchor") or {}
+        if not isinstance(anchor, dict):
+            anchor = {}
+        with get_session() as session:
+            upsert_interview_turn(
+                session,
+                session_id=session_id,
+                turn_idx=formal_turn_idx,
+                trace_id=state.get("trace_id"),
+                dimension=dimension,
+                job_level=(state.get("job_spec") or {}).get("level"),
+                question=str(qa_entry["question"]),
+                answer="",
+                score=None,
+                passed=None,
+                evaluation=dict(qa_entry["evaluation"]),
+                selection_artifacts=dict(qa_entry.get("selection_artifacts") or {}),
+                resume_anchor_key=anchor.get("anchor_key"),
+                resume_anchor_label=anchor.get("label") or anchor.get("project_name"),
+                resume_project_id=anchor.get("project_id"),
+                immediate_reward=None,
+                delayed_reward=None,
+            )
 
     log.info(
         "skip_question turn=%d formal=%d dimension=%s",

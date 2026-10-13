@@ -118,10 +118,10 @@ const QuestionAdminPage: React.FC = () => {
       valueType: "text",
       hideInSearch: true,
       width: 240,
-      renderFormItem: (item, { fieldProps }, form) => {
+      renderFormItem: () => {
         // 编写要渲染的表单项
         // value 和 onchange 会通过 form 自动注入
-        return <MdEditor {...fieldProps} />;
+        return <MdEditor />;
       },
     },
     {
@@ -130,10 +130,10 @@ const QuestionAdminPage: React.FC = () => {
       valueType: "text",
       hideInSearch: true,
       width: 640,
-      renderFormItem: (item, { fieldProps }, form) => {
+      renderFormItem: () => {
         // 编写要渲染的表单项
         // value 和 onchange 会通过 form 自动注入
-        return <MdEditor {...fieldProps} />;
+        return <MdEditor />;
       },
     },
     {

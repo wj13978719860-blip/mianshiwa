@@ -171,6 +171,14 @@ def _same_nonempty_text(left: Any, right: Any) -> bool:
 
 def _qa_turn_from_trace(trace: GenerationTrace) -> dict[str, Any]:
     snapshot = trace.state_snapshot if isinstance(trace.state_snapshot, dict) else {}
+    formal_turn_idx = _evaluator_formal_turn_idx(snapshot)
+    pending = snapshot.get("pending_qa_turn")
+    # evaluator 尚未把本轮写入 qa_history；新快照若保留 pending，先精确匹配本轮。
+    if isinstance(pending, dict) and _qa_turn_matches_trace(
+        pending, trace, formal_turn_idx=formal_turn_idx
+    ):
+        return pending
+
     history = snapshot.get("qa_history")
     if not isinstance(history, list):
         return {}
@@ -179,13 +187,39 @@ def _qa_turn_from_trace(trace: GenerationTrace) -> dict[str, Any]:
     if not turns:
         return {}
 
-    for item in reversed(turns):
-        if _same_nonempty_text(
-            item.get("question"),
-            trace.question,
-        ) or _same_nonempty_text(item.get("answer"), trace.answer):
-            return item
-    return turns[-1]
+    matches = [
+        item
+        for item in turns
+        if _qa_turn_matches_trace(item, trace, formal_turn_idx=formal_turn_idx)
+    ]
+    # 不以相同答案或上一题兜底，否则会把本轮问句挂到上一轮编号上。
+    return matches[0] if len(matches) == 1 else {}
+
+
+def _evaluator_formal_turn_idx(snapshot: dict[str, Any]) -> int | None:
+    # evaluator 写 Trace 前已递增 formal_turn_idx；还原为刚评估完成的正式轮次。
+    next_turn_idx = _int_or_none(snapshot.get("formal_turn_idx"))
+    if next_turn_idx is not None and next_turn_idx > 0:
+        return next_turn_idx - 1
+    return None
+
+
+def _qa_turn_matches_trace(
+    turn: dict[str, Any],
+    trace: GenerationTrace,
+    *,
+    formal_turn_idx: int | None,
+) -> bool:
+    if formal_turn_idx is not None and _int_or_none(turn.get("turn_idx")) != formal_turn_idx:
+        return False
+    question = str(trace.question or "").strip()
+    answer = str(trace.answer or "").strip()
+    if question and not _same_nonempty_text(turn.get("question"), question):
+        return False
+    if answer and not _same_nonempty_text(turn.get("answer"), answer):
+        return False
+    # 缺失问句且没有可靠轮次时，相同的短答案不能证明它属于同一题。
+    return bool(question or (answer and formal_turn_idx is not None))
 
 
 def _is_system_fallback_text(value: Any) -> bool:
@@ -251,6 +285,9 @@ def _turn_payload(trace: GenerationTrace) -> dict[str, Any]:
     if not evaluation:
         evaluation = qa_evaluation
     formal_turn_idx = _int_or_none(qa_turn.get("turn_idx"))
+    if formal_turn_idx is None:
+        snapshot = trace.state_snapshot if isinstance(trace.state_snapshot, dict) else {}
+        formal_turn_idx = _evaluator_formal_turn_idx(snapshot)
     payload = {
         "turn_idx": formal_turn_idx if formal_turn_idx is not None else trace.turn_idx,
         "dimension": trace.dimension or qa_turn.get("dimension"),
@@ -410,13 +447,16 @@ def _timeline_from_report(report: dict[str, Any]) -> list[dict[str, Any]]:
 def _timeline_from_turn_facts(
     db: Any,
     session_id: str,
+    *,
+    before_formal_turn_idx: int | None = None,
 ) -> list[dict[str, Any]]:
-    rows = (
+    query = (
         db.query(InterviewTurn)
         .filter(InterviewTurn.session_id == session_id)
-        .order_by(InterviewTurn.turn_idx.asc(), InterviewTurn.id.asc())
-        .all()
     )
+    if before_formal_turn_idx is not None:
+        query = query.filter(InterviewTurn.turn_idx < before_formal_turn_idx)
+    rows = query.order_by(InterviewTurn.turn_idx.asc(), InterviewTurn.id.asc()).all()
     timeline: list[dict[str, Any]] = []
     for row in rows:
         if not (str(row.question or "").strip() or str(row.answer or "").strip()):
@@ -494,16 +534,33 @@ def build_resume_history(
 
     Replay is intentionally gated to completed sessions, but the active
     interview page still needs the already-evaluated turns when a user resumes
-    an interrupted interview. The evaluator trace rows are the same durable
-    source replay uses, just without the completed-session guard.
+    an interrupted interview. Turn facts use formal indexes and remain the
+    primary source; evaluator traces backfill missing or legacy facts.
     """
     row = db.get(InterviewSession, session_id)
     if row is None:
         raise ReplayNotFound(session_id)
-    return _timeline_from_traces(
+    history = _timeline_from_turn_facts(
         db,
         session_id,
         before_formal_turn_idx=before_formal_turn_idx,
+    )
+    trace_history = _timeline_from_traces(
+        db,
+        session_id,
+        before_formal_turn_idx=before_formal_turn_idx,
+    )
+    # 事实表按正式轮次唯一保存；Trace 仅补缺，不覆盖已确定的问句、答案和评分。
+    by_turn_idx = {item["turn_idx"]: item for item in history}
+    unindexed: list[dict[str, Any]] = []
+    for item in trace_history:
+        idx = _int_or_none(item.get("turn_idx"))
+        if idx is None:
+            unindexed.append(item)
+        else:
+            by_turn_idx.setdefault(idx, item)
+    return _annotate_anchor_followups(
+        [by_turn_idx[idx] for idx in sorted(by_turn_idx)] + unindexed
     )
 
 

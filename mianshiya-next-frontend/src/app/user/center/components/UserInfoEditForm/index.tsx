@@ -32,7 +32,7 @@ const UserInfoEditForm = (props: Props) => {
     try {
       await editUserUsingPost({...values, userName: values.userName?.trim()});
       const res = await getLoginUserUsingGet();
-      dispatch(setLoginUser(res.data));
+      if (res.data) dispatch(setLoginUser(res.data));
       hide();
       message.success("操作成功");
     } catch (error: any) {

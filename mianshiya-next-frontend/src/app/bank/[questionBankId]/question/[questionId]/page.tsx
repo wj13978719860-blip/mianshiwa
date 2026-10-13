@@ -1,4 +1,5 @@
 "use server";
+import { getErrorMessage } from "@/libs/error";
 import { Flex, Menu, message } from "antd";
 import { getQuestionBankVoByIdUsingGet } from "@/api/questionBankController";
 import Title from "antd/es/typography/Title";
@@ -13,21 +14,21 @@ import "./index.css";
  * 题库题目详情页
  * @constructor
  */
-export default async function BankQuestionPage({ params }) {
+export default async function BankQuestionPage({ params }: { params: { questionBankId: string; questionId: string } }) {
   const { questionBankId, questionId } = params;
 
   // 获取题库详情
   let bank = undefined;
   try {
     const res = await getQuestionBankVoByIdUsingGet({
-      id: questionBankId,
+      id: Number(questionBankId),
       needQueryQuestionList: true,
       // 可以自行扩展为分页实现
       pageSize: 200,
     });
     bank = res.data;
   } catch (e) {
-    console.error("获取题库列表失败，" + e.message);
+    console.error("获取题库列表失败，" + getErrorMessage(e));
   }
   // 错误处理
   if (!bank) {
@@ -38,11 +39,11 @@ export default async function BankQuestionPage({ params }) {
   let question = undefined;
   try {
     const res = await getQuestionVoByIdUsingGet({
-      id: questionId,
+      id: Number(questionId),
     });
     question = res.data;
   } catch (e) {
-    console.error("获取题目详情失败，" + e.message);
+    console.error("获取题目详情失败，" + getErrorMessage(e));
   }
   // 错误处理
   if (!question) {
@@ -55,7 +56,7 @@ export default async function BankQuestionPage({ params }) {
       label: (
         <Link href={`/bank/${questionBankId}/question/${q.id}`}>{q.title}</Link>
       ),
-      key: q.id,
+      key: String(q.id),
     };
   });
 
@@ -66,7 +67,7 @@ export default async function BankQuestionPage({ params }) {
           <Title level={4} style={{ padding: "0 20px" }}>
             {bank.title}
           </Title>
-          <Menu items={questionMenuItemList} selectedKeys={[question.id]} />
+          <Menu items={questionMenuItemList} selectedKeys={[String(question.id)]} />
         </Sider>
         <Content>
           <QuestionCard question={question} />

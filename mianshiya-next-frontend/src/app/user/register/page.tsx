@@ -1,4 +1,5 @@
 "use client";
+import { getErrorMessage } from "@/libs/error";
 import { BRAND_NAME, BRAND_DESCRIPTION, BRAND_LOGO } from "@/constants/brand";
 import { LockOutlined, UserOutlined } from "@ant-design/icons";
 import { LoginForm, ProFormText } from "@ant-design/pro-components";
@@ -32,7 +33,7 @@ const UserRegisterPage: React.FC = () => {
         form.resetFields();
       }
     } catch (e) {
-      message.error("注册失败，" + e.message);
+      message.error("注册失败，" + getErrorMessage(e));
     }
   };
 

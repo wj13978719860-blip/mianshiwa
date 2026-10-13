@@ -157,3 +157,49 @@ def test_mysql_saver_round_trip(monkeypatch) -> None:
         assert saver.get_tuple(config) is None
     finally:
         mysql_adapter.reset_mysql_saver()
+
+
+def test_trace_queries_sort_rows_with_large_json_snapshots(mysql_engine) -> None:
+    from app.wenjing.models.generation_trace import GenerationTrace
+
+    base.init_db()
+    base.init_db()
+    with mysql_engine.connect() as conn:
+        indexes = {
+            row[0]
+            for row in conn.execute(
+                text(
+                    "SELECT index_name FROM information_schema.statistics "
+                    "WHERE table_schema = DATABASE() AND table_name = 'generation_traces'"
+                )
+            )
+        }
+        assert int(conn.execute(text("SELECT @@session.sort_buffer_size")).scalar()) >= 16 * 1024 * 1024
+    assert "ix_generation_traces_session_turn_id" in indexes
+
+    blob = {"history": ["x" * 1024] * 600}
+    with base.get_session() as sess:
+        for session_id in ("sess-a", "sess-b"):
+            for turn in (2, 0, 1):
+                sess.add(
+                    GenerationTrace(
+                        trace_id=f"t-{session_id}", session_id=session_id, turn_idx=turn,
+                        node="evaluator", state_snapshot=blob,
+                    )
+                )
+
+    with base.get_session() as sess:
+        per_session = (
+            sess.query(GenerationTrace)
+            .filter(GenerationTrace.session_id == "sess-a")
+            .order_by(GenerationTrace.turn_idx.asc(), GenerationTrace.id.asc())
+            .all()
+        )
+        cross_session = (
+            sess.query(GenerationTrace)
+            .filter(GenerationTrace.session_id.in_(["sess-a", "sess-b"]))
+            .order_by(GenerationTrace.created_at.desc(), GenerationTrace.id.desc())
+            .all()
+        )
+    assert [row.turn_idx for row in per_session] == [0, 1, 2]
+    assert len(cross_session) == 6

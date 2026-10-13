@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { getErrorMessage } from "@/libs/error";
 import { message } from "antd";
 import { addUserSignInUsingPost } from "@/api/userController";
 
@@ -17,7 +18,7 @@ const useAddUserSignInRecord = () => {
     try {
       await addUserSignInUsingPost({});
     } catch (e) {
-      message.error("获取刷题签到记录失败，" + e.message);
+      message.error("获取刷题签到记录失败，" + getErrorMessage(e));
     }
     setLoading(false);
   };

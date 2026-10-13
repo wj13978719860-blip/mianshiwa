@@ -26,13 +26,10 @@ TARGET = ROOT / "mianshiya-next-frontend" / "src" / "wenjing"
 
 FILES = (
     "lib/api/client.ts",
-    "lib/api/interview.ts",
     "lib/api/account.ts",
     "lib/api/trace.ts",
     "lib/api/types.ts",
     "lib/hooks/useQuestionPoller.ts",
-    "lib/storage/interviewHistory.ts",
-    "lib/storage/setupDrafts.ts",
     "lib/constants/index.ts",
     "lib/constants/interview.ts",
     "lib/constants/job-levels.ts",
@@ -47,6 +44,11 @@ FILES = (
 
 # 本仓库维护的适配文件：同步时不覆盖，--check 时列出差异行数。
 ADAPTED = {
+    # 回答幂等键使用上游接受的字符，保证网络重试不会变成重复提交。
+    "lib/api/interview.ts",
+    # 面试材料按面试蛙用户隔离，并在账号切换时清理，不能被上游同步覆盖。
+    "lib/storage/interviewHistory.ts",
+    "lib/storage/setupDrafts.ts",
     # API 基址改为 Java 网关 /api/ai/wenjing（会话 Cookie 由 Sa-Token 管理）。
     "lib/config.ts",
     # 第一期不允许浏览器自带模型配置（网关拒绝 llm_config），只保留错误分类。
@@ -98,7 +100,7 @@ def check() -> int:
     known = set(FILES) | ADAPTED
     for path in lib.rglob("*") if lib.is_dir() else ():
         rel = path.relative_to(TARGET).as_posix()
-        if path.is_file() and rel not in known:
+        if path.is_file() and rel not in known and rel != "lib/storage/userStorage.ts":
             drift.append(f"extra    {rel}")
     for line in drift:
         print(line)

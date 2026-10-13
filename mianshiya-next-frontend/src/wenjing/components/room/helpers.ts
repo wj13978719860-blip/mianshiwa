@@ -163,6 +163,61 @@ export function sameQaEntry(left: QaEntry, right: QaEntry): boolean {
   );
 }
 
+/** 自我介绍与正式题分开标识；正式题使用展示轮次，避免传输轮次偏移影响匹配。 */
+export function qaEntryIdentity(entry: QaEntry): string {
+  if (entry.questionType === "self_intro") return "self_intro";
+  const turnIdx = visibleTurnIdx(entry);
+  return turnIdx !== null ? `formal:${turnIdx}` : `question:${entry.question}`;
+}
+
+/**
+ * 恢复接口可能暂时落后于刚提交的答案，因此只能按轮次合并，不能整体替换本地记录。
+ * 已展示的题干与已提交的答案保留原文，服务端随后补充评分和其它元数据。
+ */
+export function mergeRestoredQaHistory(previous: QaEntry[], restored: QaEntry[]): QaEntry[] {
+  const byTurn = new Map(previous.map((entry) => [qaEntryIdentity(entry), entry]));
+  for (const incoming of restored) {
+    const key = qaEntryIdentity(incoming);
+    const local = byTurn.get(key);
+    byTurn.set(key, local ? {
+      ...incoming,
+      ...local,
+      question: local.question || incoming.question,
+      answer: local.answer ?? incoming.answer,
+      dimension: local.dimension ?? incoming.dimension,
+      resumeAnchor: local.resumeAnchor ?? incoming.resumeAnchor,
+      evaluation: incoming.evaluation ?? local.evaluation,
+    } : incoming);
+  }
+  return [...byTurn.values()].sort((left, right) => {
+    if (left.questionType === "self_intro") return -1;
+    if (right.questionType === "self_intro") return 1;
+    const leftIdx = visibleTurnIdx(left);
+    const rightIdx = visibleTurnIdx(right);
+    if (leftIdx === null || rightIdx === null) return 0;
+    return leftIdx - rightIdx;
+  });
+}
+
+/** 提交响应只更新对应轮次，防止恢复/轮询并发时误把答案写到列表最后一题。 */
+export function recordQaAnswer(
+  history: QaEntry[],
+  question: PollQuestion | null,
+  turnIdx: number,
+  answer: string,
+): QaEntry[] {
+  const target = qaEntryIdentity({
+    turnIdx,
+    formalTurnIdx: question ? extractFormalTurnIdx(question) : null,
+    questionType: question ? extractQuestionType(question) : undefined,
+    question: question ? extractQuestion(question) : "",
+    answer: null,
+  });
+  return history.map((entry) => qaEntryIdentity(entry) === target
+    ? { ...entry, answer, evaluation: undefined }
+    : entry);
+}
+
 export function qaEntryMatchesEvaluation(
   entry: QaEntry,
   evaluation: PreviousTurnEvaluation,

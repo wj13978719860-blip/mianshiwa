@@ -114,10 +114,39 @@ def mysql_url_from_env() -> str:
     return config.url() if config else ""
 
 
+# generation_traces 等表的单行带几百 KB 的 JSON 快照，MySQL 8 排序时把 JSON 列放进
+# sort buffer，默认 256KB 会报 1038 Out of sort memory（PostgreSQL 无此限制）。
+# MySQL 8 按需分配 sort buffer，调大上限不会让空闲连接多占内存。
+_SORT_BUFFER_BYTES = 16 * 1024 * 1024
+
+# 上游按会话读取 trace 时 ORDER BY turn_idx, id；复合索引让这些查询不再排序。
+_MYSQL_INDEXES = {
+    "ix_generation_traces_session_turn_id": ("generation_traces", ("session_id", "turn_idx", "id")),
+}
+
+
 def engine_kwargs(url: str) -> dict[str, Any]:
     if url.startswith("mysql"):
-        return {"pool_recycle": 1800, "pool_size": 10, "max_overflow": 10}
+        return {
+            "pool_recycle": 1800,
+            "pool_size": 10,
+            "max_overflow": 10,
+            "connect_args": {"init_command": f"SET SESSION sort_buffer_size = {_SORT_BUFFER_BYTES}"},
+        }
     return {}
+
+
+def ensure_mysql_indexes(eng: Any) -> None:
+    """为 MySQL 补齐上游在 PostgreSQL 上不需要的复合索引（幂等）。"""
+    with eng.begin() as conn:
+        for name, (table, columns) in _MYSQL_INDEXES.items():
+            exists = conn.exec_driver_sql(
+                "SELECT 1 FROM information_schema.statistics "
+                "WHERE table_schema = DATABASE() AND table_name = %s AND index_name = %s LIMIT 1",
+                (table, name),
+            ).first()
+            if exists is None:
+                conn.exec_driver_sql(f"CREATE INDEX {name} ON {table} ({', '.join(columns)})")
 
 
 def prepare_mysql_tables(tables: list[Table]) -> None:

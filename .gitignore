@@ -165,3 +165,7 @@ fabric.properties
 mianshiya-ai-service/wenjing/.local/
 mianshiya-ai-service/wenjing/.pytest_cache/
 **/knowledge/strategy/.dream_state.json
+# 独立生产构建验收目录，不提交构建产物。
+mianshiya-next-frontend/.next-build-check/
+# pytest 产生的临时工作目录可能含测试数据与沙箱权限文件，不发布。
+**/pytest-cache-files-*/

@@ -1,3 +1,4 @@
+import { getErrorMessage } from "@/libs/error";
 import { Button, Form, message, Modal, Select } from "antd";
 import React, { useEffect, useState } from "react";
 import { listQuestionBankVoByPageUsingPost } from "@/api/questionBankController";
@@ -60,7 +61,7 @@ const BatchAddQuestionsToBankModal: React.FC<Props> = (props) => {
       });
       setQuestionBankList(res.data?.records ?? []);
     } catch (e) {
-      message.error("获取题库列表失败，" + e.message);
+      message.error("获取题库列表失败，" + getErrorMessage(e));
     }
   };
 

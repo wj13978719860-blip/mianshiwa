@@ -61,14 +61,8 @@ def create_app(settings: Settings | None = None, registry_factory=Registry, mode
         # 模型连接池不在健康检查中发付费请求；测试可注入 HTTP 传输模拟供应商。
         gateway = ModelGateway(config, transport=model_transport)
         app.state.model = gateway
-        app.state.interviews = None
         wenjing_started = False
         try:
-            if config.interview_enabled:
-                # 只有功能启用时连接独立 MySQL；初始化失败不得带着内存状态注册上线。
-                from .interview.service import InterviewService
-                app.state.interviews = InterviewService(gateway)
-                await app.state.interviews.start()
             if wenjing is not None:
                 # 上游启动流程是同步的（建表、恢复中断会话），放到线程里避免阻塞事件循环。
                 await asyncio.to_thread(wenjing_gateway.startup, wenjing)
@@ -78,8 +72,6 @@ def create_app(settings: Settings | None = None, registry_factory=Registry, mode
             yield
         finally:
             try:
-                if app.state.interviews:
-                    await app.state.interviews.close()
                 if wenjing_started:
                     await asyncio.to_thread(wenjing_gateway.shutdown, wenjing)
             finally:
@@ -91,19 +83,16 @@ def create_app(settings: Settings | None = None, registry_factory=Registry, mode
     # 这是内部服务，默认关闭 Swagger/OpenAPI；公开入口由 Java 提供。
     app = FastAPI(title="面试蛙 AI 服务", version="0.1.0", lifespan=lifespan,
                   docs_url=None, redoc_url=None, openapi_url=None)
-    from .interview.routes import router as interview_router
-    app.include_router(interview_router)
     wenjing_enabled = settings.wenjing_enabled if settings is not None else wenjing_enabled_from_env()
     wenjing = wenjing_gateway = None
     if wenjing_enabled:
-        # 问镜子应用与旧面试路由并存，统一受下面的内部 Token 校验保护。
+        # 问镜子应用挂在内部路径下，统一受下面的内部 Token 校验保护。
         from .wenjing.adapters import gateway_app as wenjing_gateway
         wenjing = wenjing_gateway.create_gateway_app()
         app.mount(wenjing_gateway.MOUNT_PATH, wenjing)
 
     def is_internal(path):
-        return (path in INTERNAL_PATHS or path == "/internal/v1/interviews"
-                or path.startswith("/internal/v1/interviews/") or path.startswith("/internal/wenjing/"))
+        return path in INTERNAL_PATHS or path.startswith("/internal/wenjing/")
 
     def error(request, status, kind, message):
         """统一错误结构，只返回排错需要的信息，不返回内部配置或凭证。"""
@@ -164,8 +153,7 @@ def create_app(settings: Settings | None = None, registry_factory=Registry, mode
     async def ready():
         """就绪检查：业务可用性与注册状态分开，Nacos 断开不直接让业务变为不可用。"""
         registry = app.state.registry
-        interviews = app.state.interviews
-        usable = registry.ready and (interviews is None or not interviews.stopping)
+        usable = registry.ready
         return JSONResponse(status_code=200 if usable else 503, content={
             "status": "ready" if usable else "not_ready", "registry": registry.state})
 

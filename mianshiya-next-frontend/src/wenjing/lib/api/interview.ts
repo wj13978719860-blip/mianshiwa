@@ -95,7 +95,8 @@ function answerIdempotencyKey(
   answer: string,
   videoSignals?: object,
 ): string {
-  return `answer:${turnIdx}:${hashIdempotencyInput(
+  // 上游幂等键只允许字母、数字及 -_.~；冒号会导致服务端忽略去重。
+  return `answer-${turnIdx}-${hashIdempotencyInput(
     `${sessionId}\n${turnIdx}\n${answer}\n${stableJson(videoSignals ?? null)}`,
   )}`;
 }

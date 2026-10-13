@@ -19,6 +19,7 @@ from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from app.wenjing.adapters.mysql import (
     engine_kwargs,
+    ensure_mysql_indexes,
     mysql_upgrades,
     mysql_url_from_env,
     prepare_mysql_tables,
@@ -500,6 +501,8 @@ def init_db() -> None:
         ],
     )
     _upgrade_schema(eng)
-    if pgvector_available:
+    if eng.dialect.name == "mysql":
+        ensure_mysql_indexes(eng)
+    elif pgvector_available:
         _ensure_pgvector_indexes(eng)
     log.info("db schema ensured on %s", eng.url)

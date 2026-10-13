@@ -1,3 +1,4 @@
+import { getErrorMessage } from "@/libs/error";
 import { Form, message, Modal, Select } from "antd";
 import React, { useEffect, useState } from "react";
 import {
@@ -36,7 +37,7 @@ const UpdateBankModal: React.FC<Props> = (props) => {
       console.log(list);
       form.setFieldValue("questionBankIdList" as any, list);
     } catch (e) {
-      message.error("获取题目所属题库列表失败，" + e.message);
+      message.error("获取题目所属题库列表失败，" + getErrorMessage(e));
     }
   };
 
@@ -59,7 +60,7 @@ const UpdateBankModal: React.FC<Props> = (props) => {
       });
       setQuestionBankList(res.data?.records ?? []);
     } catch (e) {
-      message.error("获取题库列表失败，" + e.message);
+      message.error("获取题库列表失败，" + getErrorMessage(e));
     }
   };
 

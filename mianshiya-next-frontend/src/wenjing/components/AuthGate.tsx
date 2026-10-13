@@ -10,7 +10,8 @@ import ACCESS_ENUM from "@/access/accessEnum";
 export default function AuthGate({ children }: { children: React.ReactNode }) {
   const loginUser = useSelector((state: RootState) => state.loginUser);
   if (loginUser?.userRole && loginUser.userRole !== ACCESS_ENUM.NOT_LOGIN) {
-    return <>{children}</>;
+    // 账号切换时重新挂载页面，清除上一账号仍留在 React 内存中的简历和回答。
+    return <React.Fragment key={String(loginUser.id)}>{children}</React.Fragment>;
   }
   const toLogin = () => {
     const redirect = encodeURIComponent(window.location.pathname + window.location.search);

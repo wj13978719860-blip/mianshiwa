@@ -16,7 +16,7 @@ export const USER_ROLE_ENUM = {
 };
 
 // 用户角色 => 文本映射
-export const USER_ROLE_TEXT_MAP = {
+export const USER_ROLE_TEXT_MAP: Record<string, string> = {
   user: "普通用户",
   admin: "管理员",
 };

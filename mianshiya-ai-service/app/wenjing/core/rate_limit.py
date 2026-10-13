@@ -105,7 +105,10 @@ class RedisRateLimiter:
         from redis import Redis
 
         url = self._redis_url or get_settings().redis_url
-        self._redis_client = Redis.from_url(url, decode_responses=True)
+        # Redis 不可用时有界失败，由面试蛙网关返回 503，不能无限等待或绕过限流。
+        self._redis_client = Redis.from_url(
+            url, decode_responses=True, socket_connect_timeout=1.0, socket_timeout=2.0,
+        )
         return self._redis_client
 
     def _key(self, key: str) -> str:
@@ -127,7 +130,8 @@ class RedisRateLimiter:
     ) -> None:
         if limit <= 0 or window_seconds <= 0:
             return
-        current = time.monotonic() if now is None else now
+        # Redis 桶跨进程共享，使用统一 Unix 时间而非各主机的单调时钟起点。
+        current = time.time() if now is None else now
         ttl_seconds = max(1, math.ceil(window_seconds))
         result = self._redis().eval(
             _RATE_LIMIT_LUA,

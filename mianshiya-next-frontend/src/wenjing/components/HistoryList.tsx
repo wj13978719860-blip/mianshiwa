@@ -141,7 +141,7 @@ export default function HistoryList() {
     reload();
     let timeoutId: ReturnType<typeof setTimeout> | null = null;
     const onStorage = (e: StorageEvent) => {
-      if (e.key === "interviewHistory" || e.key === "setupDrafts" || e.key === null) {
+      if (e.key === null || e.key.startsWith("mianshiwa:interview:user:") || e.key === "interviewHistory" || e.key === "setupDrafts") {
         if (timeoutId) clearTimeout(timeoutId);
         timeoutId = setTimeout(() => reload(), 500);
       }

@@ -1,4 +1,5 @@
 "use client";
+import { getErrorMessage } from "@/libs/error";
 import { GithubFilled, LogoutOutlined, UserOutlined } from "@ant-design/icons";
 import { ProLayout } from "@ant-design/pro-components";
 import { Dropdown, message } from "antd";
@@ -44,7 +45,7 @@ export default function BasicLayout({ children }: Props) {
       dispatch(setLoginUser(DEFAULT_USER));
       router.push("/user/login");
     } catch (e) {
-      message.error("操作失败，" + e.message);
+      message.error("操作失败，" + getErrorMessage(e));
     }
   };
 

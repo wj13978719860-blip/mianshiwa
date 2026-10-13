@@ -1,182 +1,35 @@
 # 面试蛙后端
 
-基于下述 Spring Boot 教学模板扩展，内部包名和运行标识保留 `mianshiya`。
+维护者：[程序员条条](https://github.com/wj13978719860-blip/mianshiwa)
 
-> 维护者：[程序员条条](https://github.com/wj13978719860-blip/mianshiwa)
+使用 JDK 8、Spring Boot 2.7.2、MyBatis-Plus、Sa-Token、MySQL、Redis、Elasticsearch、Nacos、Sentinel 和 HotKey。内部 Java 包名及服务标识保留 `mianshiya`。
 
-基于 Java SpringBoot 的项目初始模板，整合了常用框架和主流业务的示例代码。
+## 业务与 AI 接入
 
-只需 1 分钟即可完成内容网站的后端！！！大家还可以在此基础上快速开发自己的项目。
+- 用户注册、登录、注销、资料编辑与管理员权限。
+- 题目、题库、批量关联、刷题签到与搜索同步。
+- Redis 缓存、热点识别、接口保护及动态 IP 黑名单。
+- `WenjingProxyController`：校验当前用户，通过白名单转发问镜请求，注入用户身份与内部凭证，保留 Java 登录体系。
+- `LoadBalancedWenjingTransport`：通过 Nacos 发现 Python 服务，以 HTTP 转发面试请求。
+- `AiServiceClient` / `AiModelClient`：通过 OpenFeign 调用管理员通信与模型探测接口。
 
-[toc]
+正式模拟面试由独立 Python 服务处理，Java 不需要升级 JDK。原简化版面试创建与聊天入口不再作为新面试入口，旧数据库记录保留。
 
-## 模板特点
+## 本地运行
 
-### 主流框架 & 特性
+先准备 MySQL 业务库、中间件和 HotKey 客户端依赖，具体步骤见 [项目说明](../README.md) 与 [中间件说明](../docker/README.md)。已有数据库不要重复初始化。
 
-- Spring Boot 2.7.x（贼新）
-- Spring MVC
-- MyBatis + MyBatis Plus 数据访问（开启分页）
-- Spring Boot 调试工具和项目处理器
-- Spring AOP 切面编程
-- Spring Scheduler 定时任务
-- Spring 事务注解
+在项目根目录执行：
 
-### 数据存储
-
-- MySQL 数据库
-- Redis 内存数据库
-- Elasticsearch 搜索引擎
-- 腾讯云 COS 对象存储
-
-### 工具类
-
-- Easy Excel 表格处理
-- Hutool 工具库
-- Apache Commons Lang3 工具类
-- Lombok 注解
-
-### 业务特性
-
-- 业务代码生成器（支持自动生成 Service、Controller、数据模型代码）
-- Spring Session Redis 分布式登录
-- 全局请求响应拦截器（记录日志）
-- 全局异常处理器
-- 自定义错误码
-- 封装通用响应类
-- Swagger + Knife4j 接口文档
-- 自定义权限注解 + 全局校验
-- 全局跨域处理
-- 长整数丢失精度解决
-- 多环境配置
-
-
-## 业务功能
-
-- 提供示例 SQL（用户、帖子、帖子点赞、帖子收藏表）
-- 用户登录、注册、注销、更新、检索、权限管理
-- 帖子创建、删除、编辑、更新、数据库检索、ES 灵活检索
-- 帖子点赞、取消点赞
-- 帖子收藏、取消收藏、检索已收藏帖子
-- 帖子全量同步 ES、增量同步 ES 定时任务
-- 支持微信开放平台登录
-- 支持微信公众号订阅、收发消息、设置菜单
-- 支持分业务的文件上传
-
-### 单元测试
-
-- JUnit5 单元测试
-- 示例单元测试类
-
-### 架构设计
-
-- 合理分层
-
-
-## 快速上手
-
-> 所有需要修改的地方鱼皮都标记了 `todo`，便于大家找到修改的位置~
-
-### MySQL 数据库
-
-1）修改 `application.yml` 的数据库配置为你自己的：
-
-```yml
-spring:
-  datasource:
-    driver-class-name: com.mysql.cj.jdbc.Driver
-    url: jdbc:mysql://localhost:3306/mianshiya
-    username: root
-    password: 123456
+```powershell
+$env:DB_PASSWORD='你的数据库密码'
+./scripts/start-backend.ps1 -Build -EnableAiService
 ```
 
-2）执行 `sql/create_table.sql` 中的数据库语句，自动创建库表
+启动脚本可指定 Java / Maven 路径，自动读取 `.runtime/backend-private.yml`，并从 `.runtime/ai-service.env` 读取共用服务凭证与 Nacos 参数。私有文件不提交 Git。
 
-3）启动项目，访问 `http://localhost:8101/api/doc.html` 即可打开接口文档，不需要写前端就能在线调试接口了~
+不传 `-EnableAiService` 时关闭独立 AI 接入。启用时需另外启动 Python；两端凭证、namespace、group 与服务名必须一致。
 
-![](doc/swagger.png)
+默认 Java 端口为 `8101`，接口前缀 `/api`，接口文档：http://localhost:8101/api/doc.html。业务使用项目 `BaseResponse`，需同时检查业务 `code`，不能只看 HTTP 200。
 
-### Redis 分布式登录
-
-1）修改 `application.yml` 的 Redis 配置为你自己的：
-
-```yml
-spring:
-  redis:
-    database: 1
-    host: localhost
-    port: 6379
-    timeout: 5000
-    password: 123456
-```
-
-2）修改 `application.yml` 中的 session 存储方式：
-
-```yml
-spring:
-  session:
-    store-type: redis
-```
-
-3）移除 `MainApplication` 类开头 `@SpringBootApplication` 注解内的 exclude 参数：
-
-修改前：
-
-```java
-@SpringBootApplication(exclude = {RedisAutoConfiguration.class})
-```
-
-修改后：
-
-
-```java
-@SpringBootApplication
-```
-
-### Elasticsearch 搜索引擎
-
-1）修改 `application.yml` 的 Elasticsearch 配置为你自己的：
-
-```yml
-spring:
-  elasticsearch:
-    uris: http://localhost:9200
-    username: root
-    password: 123456
-```
-
-2）复制 `sql/post_es_mapping.json` 文件中的内容，通过调用 Elasticsearch 的接口或者 Kibana Dev Tools 来创建索引（相当于数据库建表）
-
-```
-PUT post_v1
-{
- 参数见 sql/post_es_mapping.json 文件
-}
-```
-
-这步不会操作的话需要补充下 Elasticsearch 的知识，或者自行百度一下~
-
-3）开启同步任务，将数据库的帖子同步到 Elasticsearch
-
-找到 job 目录下的 `FullSyncPostToEs` 和 `IncSyncPostToEs` 文件，取消掉 `@Component` 注解的注释，再次执行程序即可触发同步：
-
-```java
-// todo 取消注释开启任务
-//@Component
-```
-
-### 业务代码生成器
-
-支持自动生成 Service、Controller、数据模型代码，配合 MyBatisX 插件，可以快速开发增删改查等实用基础功能。
-
-找到 `generate.CodeGenerator` 类，修改生成参数和生成路径，并且支持注释掉不需要的生成逻辑，然后运行即可。
-
-```
-// 指定生成参数
-String packageName = "com.yupi.mianshiya";
-String dataName = "用户评论";
-String dataKey = "userComment";
-String upperDataKey = "UserComment";
-```
-
-生成代码后，可以移动到实际项目中，并且按照 `// todo` 注释的提示来针对自己的业务需求进行修改。
+AI 环境、独立数据库和模型配置见 [AI 服务说明](../mianshiya-ai-service/README.md)，真实验证及当前限制见 [文字面试验收](../docs/问镜文字面试补齐与验收.md)。对象存储、微信及遗留帖子相关代码不代表前端功能已经完成验收。

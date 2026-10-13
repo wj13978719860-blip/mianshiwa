@@ -1,6 +1,0 @@
-# 面试引擎适配验证的独立依赖，暂不改变已运行服务的环境。
-# 阶段 0 验收后，再决定是否合入主运行依赖。
--r requirements-dev.in
-langgraph==1.2.14
-langgraph-checkpoint-mysql[pymysql]==3.0.0
-PyMySQL==1.2.3

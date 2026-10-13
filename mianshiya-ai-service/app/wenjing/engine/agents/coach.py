@@ -23,12 +23,13 @@ from collections import Counter
 from typing import Any
 
 from app.wenjing.core.logging import get_logger
+from app.wenjing.core.settings import get_settings
 from app.wenjing.engine.context import (
     build_context_frame_for_coach,
     frame_to_coach_messages,
 )
 
-from .llm_client import call_chat, parse_json_response
+from .llm_client import LLMOutputTruncated, call_chat, parse_json_response
 
 log = get_logger(__name__)
 
@@ -644,11 +645,16 @@ def build_training_plan(
     last_reason = "json_parse_failed"
     for attempt in range(2):
         try:
-            raw = call_chat(messages, json_mode=True, agent_role="coach")
+            raw = call_chat(
+                messages,
+                json_mode=True,
+                agent_role="coach",
+                max_tokens=get_settings().coach_llm_max_tokens,
+            )
         except Exception as e:  # pragma: no cover
             log.warning("coach LLM call failed, using fallback: %s", e)
             return _fallback_with_reason(
-                reason="llm_call_failed",
+                reason="output_truncated" if isinstance(e, LLMOutputTruncated) else "llm_call_failed",
                 final_report=coach_report,
                 qa_history=qa_history,
             )

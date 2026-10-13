@@ -1,3 +1,4 @@
+import { getErrorMessage } from "@/libs/error";
 import Title from "antd/es/typography/Title";
 import { Divider, Flex, message } from "antd";
 import Link from "next/link";
@@ -15,17 +16,17 @@ export const dynamic = 'force-dynamic';
  * @constructor
  */
 export default async function HomePage() {
-  let questionBankList = [];
-  let questionList = [];
+  let questionBankList: API.QuestionBankVO[] = [];
+  let questionList: API.QuestionVO[] = [];
   try {
     const res = await listQuestionBankVoByPageUsingPost({
       pageSize: 12,
       sortField: "createTime",
       sortOrder: "descend",
     });
-    questionBankList = res.data.records ?? [];
+    questionBankList = res.data?.records ?? [];
   } catch (e) {
-    message.error("获取题库列表失败，" + e.message);
+    console.error("获取题库列表失败，" + getErrorMessage(e));
   }
 
   try {
@@ -34,9 +35,9 @@ export default async function HomePage() {
       sortField: "createTime",
       sortOrder: "descend",
     });
-    questionList = res.data.records ?? [];
+    questionList = res.data?.records ?? [];
   } catch (e) {
-    message.error("获取题目列表失败，" + e.message);
+    console.error("获取题目列表失败，" + getErrorMessage(e));
   }
 
   return (

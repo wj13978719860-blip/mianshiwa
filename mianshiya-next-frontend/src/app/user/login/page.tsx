@@ -1,4 +1,5 @@
 "use client";
+import { getErrorMessage } from "@/libs/error";
 import { LockOutlined, UserOutlined } from "@ant-design/icons";
 import { LoginForm, ProFormText } from "@ant-design/pro-components";
 import React from "react";
@@ -40,7 +41,7 @@ const UserLoginPage: React.FC = () => {
         form.resetFields();
       }
     } catch (e) {
-      message.error("登录失败，" + (e instanceof Error ? e.message : "请稍后重试"));
+      message.error("登录失败，" + (e instanceof Error ? getErrorMessage(e) : "请稍后重试"));
     }
   };
 

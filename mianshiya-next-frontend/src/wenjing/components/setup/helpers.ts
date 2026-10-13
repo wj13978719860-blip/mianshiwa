@@ -1,4 +1,5 @@
 import { ApiError } from "@/wenjing/lib/api/client";
+import { userStorage } from "@/wenjing/lib/storage/userStorage";
 import type {
   ParseResumeResponse,
   ParseResumeStatus,
@@ -160,7 +161,7 @@ export function isAcceptedResumeFile(file: File): boolean {
 export function safeSessionGetItem(key: string): string | null {
   if (typeof window === "undefined") return null;
   try {
-    return window.sessionStorage.getItem(key);
+    return userStorage("session")?.getItem(key) ?? null;
   } catch {
     return null;
   }
@@ -169,7 +170,7 @@ export function safeSessionGetItem(key: string): string | null {
 export function safeSessionSetItem(key: string, value: string): void {
   if (typeof window === "undefined") return;
   try {
-    window.sessionStorage.setItem(key, value);
+    userStorage("session")?.setItem(key, value);
   } catch {
     /* Storage can be unavailable in private mode; never block the form. */
   }
@@ -178,7 +179,7 @@ export function safeSessionSetItem(key: string, value: string): void {
 export function safeSessionRemoveItem(key: string): void {
   if (typeof window === "undefined") return;
   try {
-    window.sessionStorage.removeItem(key);
+    userStorage("session")?.removeItem(key);
   } catch {
     /* ignore storage cleanup failures */
   }

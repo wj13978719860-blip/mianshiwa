@@ -1,0 +1,85 @@
+.focusSection {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12px;
+  min-width: 0;
+}
+
+.focusSection > button {
+  align-self: flex-start;
+}
+
+/* 单列优先，确保手机上的卡片与输入框不发生横向挤压。 */
+.focusGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+  gap: 12px;
+  min-width: 0;
+}
+
+.focusCard {
+  min-width: 0;
+}
+
+.focusCard :global(.ant-card-body) {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.focusHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.focusDelete {
+  flex: none;
+}
+
+.focusField {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.focusLabel,
+.focusHelp {
+  font-size: 12px;
+}
+
+.focusInput {
+  resize: none;
+}
+
+.focusSkills {
+  width: 100%;
+  min-width: 0;
+}
+
+/* 标签自然换行；极长技能不会撑宽卡片，大量标签时只在字段内滚动。 */
+.focusSkills :global(.ant-select-selector) {
+  max-height: 132px;
+  overflow-y: auto;
+}
+
+.focusSkills :global(.ant-select-selection-item) {
+  max-width: 100%;
+}
+
+.focusSkills :global(.ant-select-selection-item-content) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@media (min-width: 992px) {
+  .focusGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

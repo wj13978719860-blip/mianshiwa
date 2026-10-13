@@ -10,6 +10,6 @@ import org.springframework.context.annotation.Configuration;
  */
 @Configuration
 @ConditionalOnProperty(name = "ai.service.enabled", havingValue = "true")
-@EnableFeignClients(clients = {AiServiceClient.class, AiModelClient.class, AiInterviewClient.class})
+@EnableFeignClients(clients = {AiServiceClient.class, AiModelClient.class})
 public class AiDiscoveryConfiguration {
 }

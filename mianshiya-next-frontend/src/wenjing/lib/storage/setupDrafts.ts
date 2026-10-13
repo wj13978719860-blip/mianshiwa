@@ -1,3 +1,5 @@
+import { userStorage } from "./userStorage";
+
 export type SetupDraftStatus =
   | "parsing"
   | "ready"
@@ -21,12 +23,7 @@ type SetupDraftInput = Omit<SetupDraft, "createdAt" | "updatedAt"> &
 const SETUP_DRAFTS_KEY = "setupDrafts";
 
 function browserStorage(): Storage | null {
-  if (typeof window === "undefined") return null;
-  try {
-    return window.localStorage ?? null;
-  } catch {
-    return null;
-  }
+  return userStorage("local");
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

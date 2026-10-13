@@ -17,6 +17,7 @@ Two extraction paths run in sequence:
 """
 from __future__ import annotations
 
+import math
 import hashlib
 from typing import Any
 
@@ -150,6 +151,18 @@ def _extract_qa_patterns(
     patterns: list[dict[str, Any]] = []
     dim_turns: dict[str, list[dict[str, Any]]] = {}
     for qa in qa_history:
+        # 跳题、无评分和模型降级不是能力证据：不能当 0 分学习，更不能让收尾崩溃。
+        evaluation = qa.get("evaluation") or {}
+        score = _optional_float(evaluation.get("score"))
+        if (
+            qa.get("answer_intent") == "skipped"
+            or evaluation.get("skipped")
+            or evaluation.get("source") == "fallback"
+            or evaluation.get("fallback_reason")
+            or score is None
+            or not math.isfinite(score)
+        ):
+            continue
         dim = qa.get("dimension", "unknown")
         dim_turns.setdefault(dim, []).append(qa)
 

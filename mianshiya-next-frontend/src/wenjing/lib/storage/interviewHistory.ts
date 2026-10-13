@@ -1,3 +1,5 @@
+import { userStorage } from "./userStorage";
+
 /**
  * 本地面试历史索引（A+ 方案，纯前端 localStorage）。
  *
@@ -65,11 +67,11 @@ interface StoredShape {
 }
 
 function isBrowser(): boolean {
-  return typeof window !== "undefined" && typeof window.localStorage !== "undefined";
+  return userStorage("local") !== null;
 }
 
 function canUseSessionStorage(): boolean {
-  return typeof window !== "undefined" && typeof window.sessionStorage !== "undefined";
+  return userStorage("session") !== null;
 }
 
 function sessionTokenKey(sessionId: string): string {
@@ -83,7 +85,7 @@ export function writeSessionToken(
 ): void {
   if (!canUseSessionStorage()) return;
   try {
-    window.sessionStorage.setItem(
+    userStorage("session")!.setItem(
       sessionTokenKey(sessionId),
       JSON.stringify({ token, expiresAt }),
     );
@@ -95,7 +97,7 @@ export function writeSessionToken(
 function removeSessionToken(sessionId: string): void {
   if (!canUseSessionStorage()) return;
   try {
-    window.sessionStorage.removeItem(sessionTokenKey(sessionId));
+    userStorage("session")!.removeItem(sessionTokenKey(sessionId));
   } catch {
     /* ignore */
   }
@@ -105,14 +107,14 @@ function clearAllSessionTokens(): void {
   if (!canUseSessionStorage()) return;
   try {
     const keys: string[] = [];
-    for (let i = 0; i < window.sessionStorage.length; i += 1) {
-      const key = window.sessionStorage.key(i);
+    for (let i = 0; i < userStorage("session")!.length; i += 1) {
+      const key = userStorage("session")!.key(i);
       if (key?.startsWith(SESSION_TOKEN_KEY_PREFIX)) {
         keys.push(key);
       }
     }
     for (const key of keys) {
-      window.sessionStorage.removeItem(key);
+      userStorage("session")!.removeItem(key);
     }
   } catch {
     /* ignore */
@@ -122,7 +124,7 @@ function clearAllSessionTokens(): void {
 function readSessionToken(sessionId: string, now = Date.now()): string | undefined {
   if (!canUseSessionStorage()) return undefined;
   try {
-    const raw = window.sessionStorage.getItem(sessionTokenKey(sessionId));
+    const raw = userStorage("session")!.getItem(sessionTokenKey(sessionId));
     if (!raw) return undefined;
     const parsed = JSON.parse(raw) as { token?: unknown; expiresAt?: unknown };
     if (typeof parsed.token !== "string" || typeof parsed.expiresAt !== "string") {
@@ -144,7 +146,7 @@ function readSessionToken(sessionId: string, now = Date.now()): string | undefin
 function readRaw(): StoredShape {
   if (!isBrowser()) return { version: SCHEMA_VERSION, entries: [] };
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
+    const raw = userStorage("local")!.getItem(STORAGE_KEY);
     if (!raw) return { version: SCHEMA_VERSION, entries: [] };
     const parsed = JSON.parse(raw) as unknown;
     if (
@@ -167,7 +169,7 @@ function readRaw(): StoredShape {
 function writeRaw(shape: StoredShape): void {
   if (!isBrowser()) return;
   try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(shape));
+    userStorage("local")!.setItem(STORAGE_KEY, JSON.stringify(shape));
   } catch {
     // Quota exceeded / private mode → silently drop. We never block the UI.
   }
@@ -496,7 +498,7 @@ export function upsertEntry(input: UpsertInput): InterviewHistoryEntry {
   // Keep the legacy single-session pointer in sync so older code paths still work.
   if (isBrowser()) {
     try {
-      window.localStorage.setItem(LEGACY_LAST_KEY, input.sessionId);
+      userStorage("local")!.setItem(LEGACY_LAST_KEY, input.sessionId);
     } catch {
       /* ignore */
     }
@@ -572,8 +574,8 @@ export function removeEntry(sessionId: string): void {
 
   if (!isBrowser()) return;
   try {
-    if (window.localStorage.getItem(LEGACY_LAST_KEY) === sessionId) {
-      window.localStorage.removeItem(LEGACY_LAST_KEY);
+    if (userStorage("local")!.getItem(LEGACY_LAST_KEY) === sessionId) {
+      userStorage("local")!.removeItem(LEGACY_LAST_KEY);
     }
   } catch {
     /* ignore */
@@ -585,7 +587,7 @@ export function clearAll(): void {
   writeRaw({ version: SCHEMA_VERSION, entries: [] });
   if (!isBrowser()) return;
   try {
-    window.localStorage.removeItem(LEGACY_LAST_KEY);
+    userStorage("local")!.removeItem(LEGACY_LAST_KEY);
   } catch {
     /* ignore */
   }
