@@ -1,6 +1,6 @@
 ---
 name: generator_task
-version: v4
+version: v5
 description: Generator agent's main task — author one question plus a draft contract, respecting TARGET_DIFFICULTY.
 variables:
   - dimension
@@ -37,6 +37,14 @@ Language requirement:
 - Do not output English in ``question`` unless quoting a technology name,
   product name, code identifier, metric, or exact resume phrase.
 - Keep JSON keys unchanged.
+
+项目事实与去重约束（优先于模板措辞）：
+- RESUME_ANCHOR.label 是当前重点，project_context 只是背景。不要每次回到同项目最显眼的技术。
+- 种子、知识和 Skills 是出题参考，不能作为候选人做过支付、积分、库存等业务的证据。
+- 简历未提及的业务不能套进候选人项目；独立通用场景题必须明确说是假设，不能声称候选人做过。
+- 比较 HISTORY 中所有已问问题的考点和场景；换措辞重复整体设计或同一故障处理不算新问题。
+- REFINE_MODE 为 true 时保持上一题项目、组件用途和场景，只针对 CONTRACT_HINTS 的一个回答缺口
+  提问，不重问完整方案，不新增另一项目的场景。评分条款只针对本次补问内容。
 
 Reply with a single JSON object:
 

@@ -1018,7 +1018,7 @@ def test_selector_falls_back_to_current_ranking_when_role_pack_is_missing() -> N
     assert "role_fallback:no_matching_role_pack" in result.candidates[0].match_reasons
 
 
-def test_selector_opening_deduplicates_seed_but_followup_reuses_different_variant() -> None:
+def test_selector_deduplicates_seed_for_all_new_questions() -> None:
     session_local = _session_factory()
     with session_local() as sess:
         opening = _add_seed(
@@ -1085,8 +1085,7 @@ def test_selector_opening_deduplicates_seed_but_followup_reuses_different_varian
         )
 
     assert [candidate.variant_id for candidate in opening_result.candidates] == [followup]
-    assert followup_result.candidates[0].seed_id == "system_design.cache"
-    assert followup_result.candidates[0].variant_id == "system_design.cache.followup"
+    assert [candidate.variant_id for candidate in followup_result.candidates] == [followup]
 
 
 def test_selector_history_dedupe_ignores_non_injected_shadow_candidates() -> None:

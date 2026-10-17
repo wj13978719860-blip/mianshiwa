@@ -177,7 +177,8 @@ def test_generate_question_uses_seed_backed_fallback_when_model_omits_question(
         probe_intent="performance_probe",
     )
 
-    assert "康乐智慧养老系统" in question["question"]
+    assert "康乐智慧养老系统" not in question["question"]
+    assert "独立的假设场景题" in question["question"]
     assert "outbox" in question["question"].lower()
     assert "异步副作用" in question["question"]
     assert "重放" in question["question"]
@@ -219,7 +220,8 @@ def test_generate_question_seed_backed_fallback_keeps_system_design_seed_terms(
         probe_intent=None,
     )
 
-    assert "康乐智慧养老系统" in question["question"]
+    assert "康乐智慧养老系统" not in question["question"]
+    assert "独立的假设场景题" in question["question"]
     assert "队列" in question["question"]
     assert "背压" in question["question"]
     assert "削峰" in question["question"]

@@ -244,6 +244,20 @@ ai:
     read-timeout-ms: 3000
     # 真实生成等待预算；须大于 Python OPENAI_TIMEOUT_SECONDS 对应的毫秒数。
     model-read-timeout-ms: 40000
+    # 面试 HTTP 转发已有独立长轮询预算；超时不代表后台任务已停止。
+    wenjing-read-timeout-ms: 130000
+    protection:
+      enabled: ${AI_SERVICE_PROTECTION_ENABLED:true}
+      # 单实例并发上限，按操作隔离；起始值不是容量承诺。
+      poll-concurrency: 32
+      read-concurrency: 16
+      write-concurrency: 8
+      setup-concurrency: 4
+      # 10 秒至少 20 个完成请求、异常比例超过 50% 后熔断 10 秒。
+      error-ratio: 0.5
+      min-requests: 20
+      stat-interval-ms: 10000
+      open-seconds: 10
 feign:
   # 本次使用默认 HTTP 客户端；AI 专属凭证/超时/重试配置见 AiClientConfiguration。
   httpclient:

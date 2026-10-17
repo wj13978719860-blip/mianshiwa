@@ -27,6 +27,7 @@ import json
 import re
 import time
 from typing import Any
+from dataclasses import replace
 
 from sqlalchemy import func, or_, select
 
@@ -36,6 +37,7 @@ from app.wenjing.core.settings import get_settings
 from app.wenjing.core.tracer import get_tracer
 from app.wenjing.engine.agents.contract import negotiate_contract_via_evaluator
 from app.wenjing.engine.agents.generator import generate_question
+from app.wenjing.services.interview_quality import review_seed_candidates
 from app.wenjing.engine.agents.security import check_question
 from app.wenjing.engine.contracts.acceptance_compiler import compile_locked_acceptance_checks
 from app.wenjing.engine.contracts.acceptance_items import (
@@ -577,6 +579,10 @@ def _build_selection_artifacts(ctx: dict[str, Any]) -> dict[str, Any]:
         artifacts["candidate_anchor"] = ctx["candidate_anchor_artifact"]
     if ctx.get("question_decision_basis") is not None:
         artifacts["question_decision_basis"] = ctx["question_decision_basis"]
+    if ctx.get("seed_grounding") is not None:
+        artifacts["seed_grounding"] = ctx["seed_grounding"]
+    if (ctx.get("question_payload") or {}).get("quality_review") is not None:
+        artifacts["quality_review"] = ctx["question_payload"]["quality_review"]
     current_gaps_shadow = ctx.get("current_gaps_shadow")
     if isinstance(current_gaps_shadow, dict) and current_gaps_shadow:
         artifacts["current_gaps"] = current_gaps_shadow
@@ -849,10 +855,36 @@ def _step_select_structured_question(
         return
 
     candidates: list[QuestionCandidate] = list(selection.candidates)
+    if mode == "structured_primary" and getattr(settings, "enable_interview_quality_guard", False):
+        # 追问沿用父题场景和评价缺口，不能重新选一个完整种子来冒充追问。
+        if state.get("refine_mode") or ctx.get("depth_followup"):
+            ctx["seed_grounding"] = {"status": "followup_uses_parent", "variant_id": None}
+            candidates = [item.with_injected(False) for item in candidates]
+        elif candidates:
+            try:
+                review = review_seed_candidates(
+                    candidates, anchor=ctx.get("resume_anchor") or {}, history=state.get("qa_history") or [],
+                )
+                selected_id = review.get("variant_id")
+                chosen = next((item for item in candidates if item.variant_id == selected_id), None)
+                ctx["seed_grounding"] = {**review, "status": "accepted" if chosen else "no_match"}
+                if chosen:
+                    # 保留其他候选供 Trace 对照，真正注入的是经过业务匹配检查的候选。
+                    candidates = [replace(chosen, rank=1)] + [
+                        replace(item, rank=index + 2)
+                        for index, item in enumerate(item for item in candidates if item is not chosen)
+                    ]
+                else:
+                    candidates = [item.with_injected(False) for item in candidates]
+            except Exception as exc:
+                ctx["seed_grounding"] = {"status": "unavailable", "error_type": type(exc).__name__}
+                candidates = [item.with_injected(False) for item in candidates]
     if (
         mode == "structured_primary"
         and candidates
         and _structured_primary_allowed(candidates[0], settings)
+        and (not getattr(settings, "enable_interview_quality_guard", False)
+             or (ctx.get("seed_grounding") or {}).get("status") == "accepted")
     ):
         candidates = [
             candidate.with_injected(candidate.rank == 1)
@@ -1778,7 +1810,7 @@ def _step_draft_question(state: InterviewState, ctx: dict[str, Any]) -> None:
     runtime_config = state.get("runtime_config") or {}
     refine_mode = bool(state.get("refine_mode")) or bool(
         (ctx.get("contract_hints") or {}).get("refine_mode")
-    )
+    ) or bool(ctx.get("depth_followup"))
     _apply_auxiliary_prompt_budget(ctx)
     question_payload = generate_question(
         dimension=ctx["dimension"],
@@ -1816,6 +1848,29 @@ def _step_draft_question(state: InterviewState, ctx: dict[str, Any]) -> None:
     )
     ctx["question_payload"] = question_payload
     ctx["proposed_contract"] = question_payload.get("proposed_contract", {})
+    if question_payload.get("quality_rewrite"):
+        # 题目变更后不能继续锁定旧种子的支付等评分条款；后续协商使用新题草案。
+        ctx["locked_core_contract"] = None
+        ctx["compiled_acceptance_checks"] = []
+        ctx["reviewed_acceptance_checks"] = []
+        ctx["contract_hints"] = {key: value for key, value in (ctx.get("contract_hints") or {}).items()
+                                 if key not in {"question_seed", "locked_core_contract"}}
+        for item in ctx.get("question_items") or []:
+            item["injected"] = False
+        ctx["structured_primary_seed_hit"] = False
+        candidates = [item.with_injected(False) for item in ctx.get("question_candidates") or []]
+        if candidates:
+            # 重写后的实际题不再使用旧种子，同步撤销数据库归因，避免后续奖励污染模板统计。
+            try:
+                record_question_usages(
+                    candidates=candidates, session_id=str(state.get("session_id") or ""),
+                    turn_idx=int(state.get("formal_turn_idx", state.get("turn_idx", 0)) or 0),
+                    trace_id=state.get("trace_id"), question_selector_mode=ctx.get("question_selector_mode", "structured_primary"),
+                    question_context_key=ctx.get("question_context_key"),
+                    dimension=ctx["dimension"], job_level=(state.get("job_spec") or {}).get("level"),
+                )
+            except Exception as exc:
+                log.warning("重写题种子归因撤销失败：%s", type(exc).__name__)
 
 
 def _step_negotiate_contract(state: InterviewState, ctx: dict[str, Any]) -> None:
@@ -3247,6 +3302,14 @@ def ask_question_node(state: InterviewState) -> dict[str, Any]:
                 "source_turn_idx": depth_metadata.get("source_turn_idx"),
             },
         }
+    elif state.get("refine_mode") and getattr(get_settings(), "enable_interview_quality_guard", False):
+        # 普通 refine 与深挖槽位一样绑定父题，不能切换到同项目的另一重点。
+        parent = (state.get("qa_history") or [{}])[-1]
+        parent_anchor = parent.get("resume_anchor") or {}
+        anchor_selection = {"resume_anchor": dict(parent_anchor), "scheduler": {
+            "available": bool(parent_anchor), "expansion_reason": "refine_parent_anchor",
+            "anchor_key": parent_anchor.get("anchor_key"), "source_turn_idx": parent.get("turn_idx"),
+        }}
     ctx: dict[str, Any] = {
         "dimension": dimension,
         "qa_history": state.get("qa_history", []),
@@ -3291,6 +3354,11 @@ def ask_question_node(state: InterviewState) -> dict[str, Any]:
     )
     ctx["skill_focus"] = skill_focus
     ctx["target_skills"] = skill_focus.get("target_skills") or []
+    if state.get("refine_mode") and getattr(get_settings(), "enable_interview_quality_guard", False):
+        # 追问不轮换到尚未覆盖的其他技能，否则会把补问变成新主题。
+        parent = (state.get("qa_history") or [{}])[-1]
+        ctx["target_skills"] = list(parent.get("target_skills") or (ctx.get("resume_anchor") or {}).get("skills") or [])
+        ctx["skill_focus"] = {"source": "refine_parent", "target_skills": ctx["target_skills"]}
 
     direction = (state.get("job_spec") or {}).get("interview_direction")
     if depth_followup_slot:
@@ -3470,9 +3538,11 @@ def ask_question_node(state: InterviewState) -> dict[str, Any]:
         "rubric_points", list(contract.get("must_cover", [])),
     )
     rewrite_contract_fallback = False
-    if question_payload.get("duplicate_rewrite") or question_payload.get("language_fallback"):
+    if question_payload.get("duplicate_rewrite") or question_payload.get("language_fallback") or question_payload.get("quality_rewrite"):
         rewrite_contract_fallback = True
-        contract = _fallback_contract_for_rewritten_question(
+        contract = question_payload["proposed_contract"] if question_payload.get("quality_rewrite") and not (
+            question_payload.get("duplicate_rewrite") or question_payload.get("language_fallback")
+        ) else _fallback_contract_for_rewritten_question(
             dimension=dimension,
             target_skills=ctx.get("target_skills") or [],
             target_difficulty=state.get("target_difficulty", "medium"),

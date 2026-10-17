@@ -88,6 +88,17 @@ class WenjingProxyControllerTest {
     }
 
     @Test
+    void forwardsJdUploadWithOwnerAndRejectsAnonymousUpload() throws Exception {
+        when(transport.exchange(eq("POST"), eq("interview/jd/extract"), anyMap(), any()))
+                .thenReturn(new WenjingTransport.Reply(200, "application/json", "{}".getBytes(StandardCharsets.UTF_8)));
+        MockMultipartFile file = new MockMultipartFile("file", "岗位要求.txt", "text/plain", "Java 后端岗位".getBytes(StandardCharsets.UTF_8));
+        assertEquals(200, controller(true).upload(request("POST", "interview/jd/extract"), file).getStatusCodeValue());
+        assertEquals("9007199254740993", sentHeaders().get("X-Owner-Id"));
+        reset(users);
+        assertEquals(401, controller(false).upload(request("POST", "interview/jd/extract"), file).getStatusCodeValue());
+    }
+
+    @Test
     void rebuildsResumeUploadAsSingleFileMultipart() throws Exception {
         when(transport.exchange(eq("POST"), eq("interview/resume/parse-jobs"), anyMap(), any()))
                 .thenReturn(new WenjingTransport.Reply(200, "application/json", "{}".getBytes(StandardCharsets.UTF_8)));
@@ -111,6 +122,17 @@ class WenjingProxyControllerTest {
         ResponseEntity<byte[]> response = controller(true).proxy(request("GET", "interview/dimensions"), null);
 
         assertEquals(502, response.getStatusCodeValue());
+        assertTrue(new String(response.getBody(), StandardCharsets.UTF_8).contains(id));
+    }
+
+    @Test
+    void localProtectionReturnsRetryable503InsteadOfFakeSuccess() throws Exception {
+        when(transport.exchange(anyString(), anyString(), anyMap(), any()))
+                .thenThrow(new WenjingBlockedException(true, null));
+        ResponseEntity<byte[]> response = controller(true).proxy(request("GET", "interview/dimensions"), null);
+        assertEquals(503, response.getStatusCodeValue());
+        assertEquals("3", response.getHeaders().getFirst("Retry-After"));
+        assertEquals("no-store", response.getHeaders().getCacheControl());
         assertTrue(new String(response.getBody(), StandardCharsets.UTF_8).contains(id));
     }
 }

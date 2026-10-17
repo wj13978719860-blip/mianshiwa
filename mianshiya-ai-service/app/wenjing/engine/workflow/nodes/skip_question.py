@@ -42,6 +42,9 @@ def skip_question_node(state: InterviewState) -> dict[str, Any]:
         question.get("dimension") or state.get("current_dimension") or "unknown"
     )
     is_self_intro = question.get("question_type") == "self_intro"
+    # 开场不是正式题；跳过开场也不能扣减正式题预算。
+    if is_self_intro:
+        budget = int(state.get("turn_budget_remaining", 0))
     next_formal_turn_idx = formal_turn_idx if is_self_intro else formal_turn_idx + 1
     skip_reason = state.get("skip_reason")
     dimensions = list(state.get("dimensions") or [])
@@ -53,6 +56,7 @@ def skip_question_node(state: InterviewState) -> dict[str, Any]:
 
     qa_entry = {
         "turn_idx": formal_turn_idx,
+        "question_type": question.get("question_type") or "technical",
         "dimension": dimension,
         "question": question.get("question", ""),
         "answer": "",
@@ -111,7 +115,7 @@ def skip_question_node(state: InterviewState) -> dict[str, Any]:
         formal_turn_idx,
         dimension,
     )
-    return {
+    update = {
         "qa_history": [qa_entry],
         "messages": [
             {
@@ -131,3 +135,7 @@ def skip_question_node(state: InterviewState) -> dict[str, Any]:
         "current_dimension": next_dimension or dimension,
         "dimension_status": next_status,
     }
+    # 跳过与完成开场具有相同的阶段推进含义，不再等待自我介绍。
+    if is_self_intro:
+        update["intro_completed"] = True
+    return update

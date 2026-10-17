@@ -687,6 +687,7 @@ def _invoke_provider(
     override: dict[str, Any] | None = None,
     request_timeout: float | None = None,
     provider_max_retries: int | None = None,
+    thinking_enabled: bool | None = None,
 ) -> tuple[str, dict[str, Any]]:
     """Route to the configured provider after retry semantics are applied.
 
@@ -734,6 +735,7 @@ def _invoke_provider(
             override=override,
             request_timeout=request_timeout,
             provider_max_retries=provider_max_retries,
+            **({"thinking_enabled": thinking_enabled} if thinking_enabled is not None else {}),
         )
     if provider in _OPENAI_COMPATIBLE_DEFAULT_BASE_URLS:
         base_url = (override or {}).get("base_url") or _OPENAI_COMPATIBLE_DEFAULT_BASE_URLS[
@@ -1008,6 +1010,7 @@ def call_chat(
     request_timeout: float | None = None,
     max_retries: int | None = None,
     provider_max_retries: int | None = None,
+    thinking_enabled: bool | None = None,
 ) -> str:
     """Single entrypoint used by every agent/node.
 
@@ -1186,6 +1189,7 @@ def call_chat(
                 override=override if has_override_key else None,
                 request_timeout=effective_request_timeout,
                 provider_max_retries=provider_max_retries,
+                **({"thinking_enabled": thinking_enabled} if thinking_enabled is not None else {}),
             )
             # ``_invoke_provider`` returns ``(content, usage)`` in
             # production. Existing pre-PR-1 tests, however, monkeypatch
@@ -1348,6 +1352,7 @@ def _call_deepseek(
     override: dict[str, Any] | None = None,
     request_timeout: float | None = None,
     provider_max_retries: int | None = None,
+    thinking_enabled: bool | None = None,
 ) -> tuple[str, dict[str, Any]]:
     """Call DeepSeek via its OpenAI-compatible Chat Completions API.
 
@@ -1369,6 +1374,9 @@ def _call_deepseek(
         override={"api_key": api_key},
         request_timeout=request_timeout,
         provider_max_retries=provider_max_retries,
+        # 仅显式要求时传递开关，正常出题/评分继续沿用供应商默认思考设置。
+        **({"extra_body": {"thinking": {"type": "enabled" if thinking_enabled else "disabled"}}}
+           if thinking_enabled is not None else {}),
     )
 
 
@@ -1383,6 +1391,7 @@ def _call_openai_compatible(
     override: dict[str, Any] | None = None,
     request_timeout: float | None = None,
     provider_max_retries: int | None = None,
+    extra_body: dict[str, Any] | None = None,
 ) -> tuple[str, dict[str, Any]]:
     """Generic OpenAI-Chat-Completions-compatible client.
 
@@ -1416,6 +1425,8 @@ def _call_openai_compatible(
         "temperature": temperature,
         "max_tokens": max_tokens,
     }
+    if extra_body is not None:
+        kwargs["extra_body"] = extra_body
     if json_mode:
         kwargs["response_format"] = {"type": "json_object"}
 

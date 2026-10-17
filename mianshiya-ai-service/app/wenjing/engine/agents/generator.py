@@ -34,6 +34,9 @@ from app.wenjing.engine.context import (
 from app.wenjing.memory.strategy_store import build_strategy_index as build_strategy_index
 
 from .llm_client import ChatMessage, call_chat, parse_json_response
+from app.wenjing.services.interview_quality import (
+    evidence_fallback, followup_gap, review_generated_question,
+)
 
 log = get_logger(__name__)
 
@@ -229,17 +232,11 @@ def _seed_backed_fallback_question_text(
     stem = seed.get("question_stem")
     if not stem:
         return ""
-    dim = _dimension_label(dimension)
-    project = _resume_project_label(resume_anchor)
-    skills = _skill_phrase(
-        target_skills=target_skills,
-        resume_anchor=resume_anchor,
-        self_intro_profile=self_intro_profile,
-    )
     scenario = seed.get("scenario", "")
     scenario_part = f"场景背景是：{scenario}" if scenario else ""
+    # 种子兜底不能把其业务场景当作简历事实。独立假设仍可考察通用技术能力。
     return (
-        f"请结合「{project}」中与「{skills}」相关的{dim}场景，{scenario_part}"
+        f"下面是一道独立的假设场景题，不代表你的项目已经实现该业务。{scenario_part}"
         f"{stem} 请说明你的具体设计、关键取舍、验证指标，以及如果压力更高会如何演进。"
     )
 
@@ -481,6 +478,7 @@ def generate_question(
     )
     used_seed_fallback = bool(
         seed_fallback
+        and not refine_mode
         and (
             not model_question
             or _looks_like_generic_tradeoff_prompt(model_question)
@@ -519,6 +517,71 @@ def generate_question(
         question["seed_backed_fallback"] = True
         if model_question and _looks_seed_misaligned(model_question, question_seed_block):
             question["seed_backed_fallback_reason"] = "structured_seed_alignment"
+    if getattr(get_settings(), "enable_interview_quality_guard", False):
+        # 先审核，再至多重写一次；不无限调用模型，也不向用户展示审核不通过的原题。
+        gap = followup_gap(recent_qa, contract_hints or {})
+        reviews: list[dict[str, Any]] = []
+        accepted = False
+        original = str(question["question"])
+        for attempt in range(2):
+            try:
+                review = review_generated_question(
+                    str(question["question"]), anchor=resume_anchor or {}, history=recent_qa,
+                    refine_mode=refine_mode, gap=gap,
+                    contract=question.get("proposed_contract"),
+                )
+                reviews.append(review)
+                if review["accepted"]:
+                    accepted = True
+                    break
+                if attempt == 0:
+                    # 重写明确解除旧种子的业务/评分约束，要求重新生成与新题一致的条款。
+                    rewrite_messages = messages + [ChatMessage("system",
+                        "上一题审核不通过。此次重写忽略 QUESTION_SEED、模板场景及其评分条款，"
+                        "以 RESUME_ANCHOR 当前重点和真实事实为准，避开 HISTORY 的重复考点。"
+                        "如果是追问，保持上一题场景，只问一个缺口：" + gap
+                        + "。重新输出完整问题及与问题一致的 proposed_contract。审核原因："
+                        + str(review.get("reason") or "题目不符合事实或重复"))]
+                    revised = parse_json_response(call_chat(
+                        rewrite_messages, json_mode=True, agent_role="generator",
+                    ))
+                    if not isinstance(revised.get("question"), str) or not revised["question"].strip():
+                        raise ValueError("quality_rewrite_empty")
+                    question["question"] = revised["question"].strip()
+                    question["rubric_points"] = revised.get("rubric_points") or ["具体证据"]
+                    question["rationale"] = revised.get("rationale") or "根据事实和本场历史调整问题"
+                    question["proposed_contract"] = revised.get("proposed_contract") or _default_proposed_contract(
+                        dimension=dimension, rubric_points=question["rubric_points"], refine_mode=refine_mode,
+                        target_difficulty=target_difficulty, target_skills=target_skills, resume_anchor=resume_anchor,
+                    )
+                    question["proposed_contract"]["bar_level"] = difficulty_to_bar_level(target_difficulty)
+                    question["quality_rewrite"] = True
+            except Exception as exc:
+                reviews.append({"status": "unavailable", "error_type": type(exc).__name__})
+                break
+        if not accepted:
+            text, points = evidence_fallback(
+                anchor=resume_anchor or {}, history=recent_qa, refine_mode=refine_mode, gap=gap,
+            )
+            question["question"] = text
+            question["rationale"] = "出题质量检查未通过，改为围绕已有事实补充具体证据"
+            question["rubric_points"] = points
+            question["proposed_contract"] = {
+                "must_cover": points, "acceptable_if_missing": [],
+                "acceptance_checks": [f"回答提供与「{point}」有关的具体细节。" for point in points],
+                "minimum_bar": "围绕本题给出具体细节或可验证证据，无需重述之前的完整方案。",
+                "review_focus": points, "bar_level": difficulty_to_bar_level(target_difficulty),
+            }
+            question["quality_rewrite"] = True
+        question["quality_review"] = {
+            "status": "accepted" if accepted else "evidence_fallback",
+            "attempts": reviews, "source_turn_idx": recent_qa[-1].get("turn_idx") if refine_mode and recent_qa else None,
+            "gap": gap if refine_mode else "",
+        }
+        if question.get("quality_rewrite"):
+            question["original_question"] = original
+            question.pop("seed_backed_fallback", None)
+            question.pop("seed_backed_fallback_reason", None)
     if resume_anchor:
         question["resume_anchor"] = resume_anchor
     log.debug(

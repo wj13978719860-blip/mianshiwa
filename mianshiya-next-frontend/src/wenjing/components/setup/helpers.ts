@@ -93,7 +93,7 @@ export function validateForm(values: FormValues): {
   if (!JOB_LEVEL_VALUES.includes(values.job_level)) {
     errors.job_level = "Invalid enum value";
   }
-  if (values.job_description.length > 50000) {
+  if (values.job_description.length > 20000) {
     errors.job_description = "JD 过长，请精简后再试";
   }
   if (!LENGTH_VALUES.includes(values.length)) {

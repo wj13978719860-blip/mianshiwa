@@ -113,6 +113,7 @@ export interface JobSpec {
   required_skills: string[];
   rubric_dimensions: string[];
   rubric?: Record<string, string>;
+  description?: string;
   interview_industry?: string;
   interview_direction?: string;
   interview_direction_label?: string;

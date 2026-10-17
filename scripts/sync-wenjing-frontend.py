@@ -28,7 +28,6 @@ FILES = (
     "lib/api/client.ts",
     "lib/api/account.ts",
     "lib/api/trace.ts",
-    "lib/api/types.ts",
     "lib/hooks/useQuestionPoller.ts",
     "lib/constants/index.ts",
     "lib/constants/interview.ts",
@@ -44,6 +43,8 @@ FILES = (
 
 # 本仓库维护的适配文件：同步时不覆盖，--check 时列出差异行数。
 ADAPTED = {
+    # 定向岗位面试的原始 JD 与确认状态是面试蛙适配，不能被上游覆盖。
+    "lib/api/types.ts",
     # 回答幂等键使用上游接受的字符，保证网络重试不会变成重复提交。
     "lib/api/interview.ts",
     # 面试材料按面试蛙用户隔离，并在账号切换时清理，不能被上游同步覆盖。
@@ -100,7 +101,7 @@ def check() -> int:
     known = set(FILES) | ADAPTED
     for path in lib.rglob("*") if lib.is_dir() else ():
         rel = path.relative_to(TARGET).as_posix()
-        if path.is_file() and rel not in known and rel != "lib/storage/userStorage.ts":
+        if path.is_file() and rel not in known and rel not in {"lib/storage/userStorage.ts", "lib/jd-setup.ts"}:
             drift.append(f"extra    {rel}")
     for line in drift:
         print(line)

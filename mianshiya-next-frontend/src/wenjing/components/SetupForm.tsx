@@ -9,7 +9,7 @@
  */
 import React, { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Alert, Button, Card, Flex, Form, Input, Modal, Select, Space, Spin, Typography } from "antd";
+import { Alert, Button, Card, Checkbox, Flex, Form, Input, Modal, Radio, Select, Space, Spin, Tag, Typography } from "antd";
 import {
   AimOutlined,
   ArrowRightOutlined,
@@ -20,6 +20,7 @@ import {
 } from "@ant-design/icons";
 import {
   createResumeParseJob,
+  extractJobDescription,
   getJobTemplate,
   getResumeParseJob,
   getSessionSetupSnapshot,
@@ -29,6 +30,7 @@ import {
   startSession,
 } from "@/wenjing/lib/api/interview";
 import { jobTemplateAutofillValue } from "@/wenjing/lib/job-template";
+import { canStartWithJd, jdContextKey } from "@/wenjing/lib/jd-setup";
 import {
   candidateNameAutofillValue,
   createResumeParseJobForSetup,
@@ -236,7 +238,13 @@ function SetupFormInner() {
 
   // JD parse state
   const [jdStatus, setJdStatus] = useState<JdStatus>({ kind: "idle" });
-  const jdDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [jobPracticeMode, setJobPracticeMode] = useState<"general" | "targeted">("general");
+  const [jdResult, setJdResult] = useState<ParseJobSpecResponse | null>(null);
+  const [jdConfirmed, setJdConfirmed] = useState(false);
+  const [jdParsedKey, setJdParsedKey] = useState<string | null>(null);
+  const [jdUploading, setJdUploading] = useState(false);
+  const jdRequestRef = useRef(0);
+  const jdFileInputRef = useRef<HTMLInputElement | null>(null);
   const jdTemplateRequestRef = useRef(0);
   const jdUserEditedRef = useRef(false);
   const practiceFocusAppliedRef = useRef(false);
@@ -263,6 +271,11 @@ function SetupFormInner() {
   const watchedHighlights = values.candidate_highlights;
   const resumeFieldsLocked = upload.kind === "parsing";
   const isStartingInterview = isSubmitting || isInterviewStartPending;
+  const jdReadyForStart = canStartWithJd({
+    targeted: jobPracticeMode === "targeted", uploading: jdUploading,
+    status: jdStatus.kind, confirmed: jdConfirmed, parsedKey: jdParsedKey,
+    currentKey: jdContextKey(values.job_description, values.interview_direction, values.job_title, values.job_level),
+  });
 
   useEffect(() => {
     if (step === STEP_LABELS.length - 1) {
@@ -408,7 +421,7 @@ function SetupFormInner() {
 
   useEffect(() => {
     return () => {
-      if (jdDebounceRef.current) clearTimeout(jdDebounceRef.current);
+      jdRequestRef.current += 1;
     };
   }, []);
 
@@ -504,6 +517,16 @@ function SetupFormInner() {
     },
     [dimensionOptionsFromIds, getValues, setValue],
   );
+
+  // 岗位方向、名称、级别改变后，旧解析不能再作为本次确认结果。
+  useEffect(() => {
+    jdRequestRef.current += 1;
+    setJdUploading(false);
+    setJdStatus({ kind: "idle" });
+    setJdResult(null);
+    setJdParsedKey(null);
+    setJdConfirmed(false);
+  }, [values.interview_direction, values.job_title, values.job_level, jobPracticeMode]);
 
   const applyPracticeFocusQuery = useCallback(() => {
     if (practiceFocusAppliedRef.current) return;
@@ -802,14 +825,16 @@ function SetupFormInner() {
 
   const scheduleJdParse = useCallback(
     (text: string) => {
-      if (jdDebounceRef.current) clearTimeout(jdDebounceRef.current);
+      const requestId = ++jdRequestRef.current;
+      const contextKey = jdContextKey(text, getValues("interview_direction"), getValues("job_title"), getValues("job_level"));
+      setJdConfirmed(false);
+      setJdResult(null);
       if (text.trim().length < 30) {
-        // Too short to bother with the LLM. Reset to defaults.
-        setJdStatus({ kind: "idle" });
+        setJdStatus({ kind: "error", message: "请提供至少 30 字的岗位招聘要求。" });
         return;
       }
       setJdStatus({ kind: "parsing" });
-      jdDebounceRef.current = setTimeout(async () => {
+      void (async () => {
         try {
           const res = await parseJobSpec({
             text,
@@ -818,23 +843,55 @@ function SetupFormInner() {
             level: getValues("job_level"),
             llmConfig: buildLLMPayload(),
           });
+          // 输入改变、切换模式或新请求开始时，迟到的旧结果直接丢弃。
+          if (requestId !== jdRequestRef.current) return;
+          if (contextKey !== jdContextKey(getValues("job_description"), getValues("interview_direction"), getValues("job_title"), getValues("job_level"))) return;
           applyJdResult(res);
+          setJdResult(res);
+          setJdParsedKey(contextKey);
           setJdStatus({ kind: "success", rationale: res.rationale });
         } catch (err) {
+          if (requestId !== jdRequestRef.current) return;
           setJdStatus({
             kind: "error",
             message: friendlySetupError(err, "jd"),
           });
         }
-      }, 700);
+      })();
     },
     [applyJdResult, getValues],
   );
 
   function handleJobDescriptionChange(text: string) {
+    jdRequestRef.current += 1;
+    setJdUploading(false);
+    setJdConfirmed(false);
+    setJdResult(null);
+    setJdStatus({ kind: "idle" });
+    setJdRequiredSkills([]);
     changeField("job_description", text);
     markJobDescriptionEdited();
-    scheduleJdParse(text || "");
+  }
+
+  async function handleJdUpload(file: File) {
+    if (file.size > MAX_UPLOAD_BYTES || !/\.(pdf|docx|txt|md)$/i.test(file.name)) {
+      setJdStatus({ kind: "error", message: "请选择不超过 5 MB 的 PDF、DOCX、TXT 或 MD 文件。" });
+      return;
+    }
+    handleJobDescriptionChange("");
+    const requestId = ++jdRequestRef.current;
+    setJdUploading(true);
+    try {
+      const res = await extractJobDescription(file);
+      if (requestId !== jdRequestRef.current) return;
+      handleJobDescriptionChange(res.text);
+    } catch (err) {
+      if (requestId === jdRequestRef.current) {
+        setJdStatus({ kind: "error", message: friendlySetupError(err, "jd") });
+      }
+    } finally {
+      if (requestId === jdRequestRef.current) setJdUploading(false);
+    }
   }
 
   useEffect(() => {
@@ -842,6 +899,7 @@ function SetupFormInner() {
   }, [loadJobTemplate]);
 
   function toggleDim(option: DimensionOption) {
+    setJdConfirmed(false);
     setSelectedDims((prev) => {
       if (prev.some((d) => d.id === option.id)) {
         return prev.filter((d) => d.id !== option.id);
@@ -852,6 +910,7 @@ function SetupFormInner() {
   }
 
   function removeDim(id: string) {
+    setJdConfirmed(false);
     setSelectedDims((prev) => prev.filter((d) => d.id !== id));
   }
 
@@ -921,6 +980,11 @@ function SetupFormInner() {
 
   async function onValid(parsedValues: ParsedFormValues) {
     const formValues = parsedValues;
+    if (!jdReadyForStart || (jobPracticeMode === "targeted" && !jdResult)) {
+      setServerError("请先提供真实 JD，完成解析并确认岗位要求，再开始面试。");
+      setStep(2);
+      return;
+    }
     setInterviewStartPending(true);
     setServerError(null);
     if (resumeFieldsLocked) {
@@ -986,6 +1050,7 @@ function SetupFormInner() {
       job_spec: {
         title: formValues.job_title,
         level: formValues.job_level,
+        description: jobPracticeMode === "targeted" ? formValues.job_description.trim() : "",
         required_skills: requiredSkills,
         rubric_dimensions: selectedDims.map((d) => d.id),
         interview_industry: formValues.interview_industry,
@@ -1098,11 +1163,31 @@ function SetupFormInner() {
             <StepIndicator current={step} onJump={(id) => void handleStepJump(id)} />
 
             {step === 0 && (
+              <Space direction="vertical" size={16} style={{ width: "100%" }}>
+                <Card title="你想怎么练习？">
+                  <Radio.Group value={jobPracticeMode} onChange={(e) => {
+                    const mode = e.target.value as "general" | "targeted";
+                    setJobPracticeMode(mode);
+                    // 真实 JD 不得被方向模板或正在返回的模板请求填充。
+                    jdTemplateRequestRef.current += 1;
+                    jdUserEditedRef.current = mode === "targeted";
+                    handleJobDescriptionChange("");
+                    jdUserEditedRef.current = mode === "targeted";
+                    setSelectedDims(resolveDirection(getValues("interview_direction")).dimensions);
+                    if (mode === "general") void loadJobTemplate(getValues("interview_direction"));
+                  }}>
+                    <Space direction="vertical">
+                      <Radio value="general">按岗位方向练习：结合简历，不需要招聘 JD</Radio>
+                      <Radio value="targeted">针对招聘岗位面试：提供真实 JD，确认后开始</Radio>
+                    </Space>
+                  </Radio.Group>
+                </Card>
               <DirectionStep
                 selected={values.interview_direction}
                 directions={directionOptions}
                 onSelect={selectDirection}
               />
+              </Space>
             )}
 
             {step === 1 && (
@@ -1277,24 +1362,52 @@ function SetupFormInner() {
                     </div>
                     <div style={{ flex: "1 1 100%" }}>
                       <Flex justify="space-between" align="center" wrap="wrap" gap={8} style={{ marginBottom: 4 }}>
-                        <Text>岗位要求</Text>
-                        <JdHint
+                        <Text>{jobPracticeMode === "targeted" ? "真实岗位招聘要求（JD，必填）" : "通用岗位要求"}</Text>
+                        {jobPracticeMode === "targeted" && <JdHint
                           status={jdStatus}
                           onRetry={() => scheduleJdParse(values.job_description || "")}
-                        />
+                        />}
                       </Flex>
                       <Text type="secondary" style={{ fontSize: 12, display: "block", marginBottom: 8 }}>
-                        系统已根据目标岗位生成通用要求，可直接调整；如果你有真实 JD，也可以粘贴覆盖。
+                        {jobPracticeMode === "targeted" ? "粘贴招聘信息，或上传 JD 文件。检查文字后点击解析，再确认结果。" : "本模式使用方向和简历练习；要按真实招聘要求面试，请在第一步选择针对招聘岗位面试。"}
                       </Text>
                       <Input.TextArea
                         rows={5}
-                        maxLength={50000}
+                        maxLength={20000}
                         value={values.job_description}
                         onChange={(e) => handleJobDescriptionChange(e.target.value)}
                         status={errors.job_description ? "error" : undefined}
                         placeholder="粘贴真实岗位 JD，或基于当前通用要求微调。系统会据此调整考察重点和技能范围，不用于判断目标级别。"
                         style={{ resize: "none" }}
+                        readOnly={jobPracticeMode === "general"}
                       />
+                      {jobPracticeMode === "targeted" && (
+                        <Space direction="vertical" size={12} style={{ width: "100%", marginTop: 12 }}>
+                          <input ref={jdFileInputRef} type="file" accept=".pdf,.docx,.txt,.md" hidden onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            e.target.value = "";
+                            if (file) void handleJdUpload(file);
+                          }} />
+                          <Space wrap>
+                            <Button loading={jdUploading} onClick={() => jdFileInputRef.current?.click()}>上传 JD 文件</Button>
+                            <Button type="primary" loading={jdStatus.kind === "parsing"} disabled={jdUploading || values.job_description.trim().length < 30} onClick={() => scheduleJdParse(values.job_description)}>解析岗位要求</Button>
+                            <Text type="secondary">PDF / DOCX / TXT / MD，最大 5 MB</Text>
+                          </Space>
+                          {jdResult && jdStatus.kind === "success" && (
+                            <Card size="small" title="请确认 JD 解析结果">
+                              <Space direction="vertical" style={{ width: "100%" }}>
+                                <Text strong>岗位要求技能</Text>
+                                <Select mode="tags" value={jdRequiredSkills} style={{ width: "100%" }} onChange={(skills) => { setJdRequiredSkills(skills); setJdConfirmed(false); }} placeholder="检查并补充岗位技能" />
+                                <Text strong>考察维度</Text>
+                                <Flex wrap="wrap" gap={4}>{selectedDims.map((d) => <Tag key={d.id} color="green">{d.label}</Tag>)}</Flex>
+                                <Text type="secondary">{jdResult.rationale}</Text>
+                                {!!jdResult.unmapped_requirements?.length && <Alert type="warning" message={`以下要求尚未映射到考察维度：${jdResult.unmapped_requirements.join("、")}`} />}
+                                <Checkbox checked={jdConfirmed} onChange={(e) => setJdConfirmed(e.target.checked)}>我已核对岗位要求和考察维度</Checkbox>
+                              </Space>
+                            </Card>
+                          )}
+                        </Space>
+                      )}
                       {errors.job_description && (
                         <Text type="danger" style={{ fontSize: 12 }}>
                           {errors.job_description}
@@ -1381,7 +1494,7 @@ function SetupFormInner() {
                   type="primary"
                   htmlType="submit"
                   size="large"
-                  disabled={isStartingInterview || resumeFieldsLocked}
+                  disabled={isStartingInterview || resumeFieldsLocked || !jdReadyForStart}
                   loading={isStartingInterview}
                   style={{ background: isStartingInterview || resumeFieldsLocked ? undefined : ACCENT }}
                 >

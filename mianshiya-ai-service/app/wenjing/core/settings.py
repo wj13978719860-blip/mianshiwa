@@ -603,6 +603,9 @@ class Settings(BaseSettings):
     strategy_promotion_interval_minutes: int = 60
     strategy_promotion_startup_delay_minutes: int = 5
 
+    # 面试蛙质量校验：生产默认启用；可回退旧流程以做对照，不影响数据库结构。
+    enable_interview_quality_guard: bool = True
+
     # Structured question-bank rollout mode.
     # - vector: current vector/hybrid RAG question generation only.
     # - structured_shadow: select YAML question seeds and record artifacts/usages

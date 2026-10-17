@@ -1436,9 +1436,9 @@ def _derive_focus_areas(
     highlights: list[str],
 ) -> list[dict[str, Any]]:
     focus: list[dict[str, Any]] = []
-    for project in projects[:4]:
+    for project in projects[:5]:
         anchors = _normalise_list(project.get("question_anchors"), limit=3)
-        for anchor in anchors[:2]:
+        for anchor in anchors[:3]:
             focus.append(
                 {
                     "id": f"focus-{len(focus) + 1}",
@@ -1449,7 +1449,7 @@ def _derive_focus_areas(
                     "priority": len(focus) + 1,
                 }
             )
-            if len(focus) >= 6:
+            if len(focus) >= 12:
                 return _normalise_focus_areas(focus, projects=projects)
     if not focus:
         for highlight in highlights[:3]:
@@ -1475,7 +1475,7 @@ def _derive_focus_areas(
                     "priority": len(focus) + 1,
                 }
             )
-    return _normalise_focus_areas(focus[:6], projects=projects)
+    return _normalise_focus_areas(focus[:12], projects=projects)
 
 
 def _derive_concerns(projects: list[dict[str, Any]], highlights: list[str]) -> list[str]:
@@ -1551,7 +1551,9 @@ _SYSTEM_PROMPT = """你是一名严谨的简历解析器。
 - "projects": 最多 5 个具体项目 / 经历锚点。每项包含 id、name、role、
   tech_stack、responsibilities、achievements、question_anchors。
   其中用户可见文本都使用简体中文；数组字段每项最多 3 条，每条保持短句。
-- "focus_areas": 最多 6 个面试重点，来源于项目经历。每项包含 id、label、
+- "focus_areas": 最多 12 个面试重点，来源于项目经历。覆盖不同项目和不同已证实的
+  实现细节，避免多个重点只是同一考点改写；简历证据不足时少返回，不要凑数。
+  每项包含 id、label、
   project_id、dimensions、skills、priority。label 使用简体中文。
   focus_areas[].dimensions 只能使用这些运行时维度 id：
   technical_depth、system_design、problem_solving、coding_quality、
@@ -1832,7 +1834,8 @@ def _normalise_focus_areas(
         if isinstance(project, dict) and project.get("id")
     }
     focus: list[dict[str, Any]] = []
-    for idx, item in enumerate(raw[:6], start=1):
+    # 重点池与首页亮点摘要分开：保留更多真实重点供不同场次轮换，不随机改写事实。
+    for idx, item in enumerate(raw[:12], start=1):
         if not isinstance(item, dict):
             continue
         label = str(item.get("label") or "").strip()

@@ -16,7 +16,8 @@ from app.wenjing.core.settings import get_settings
 
 log = get_logger(__name__)
 
-PARSER_VERSION = "2026-04-27-v1"
+# 新版本扩大真实重点覆盖；旧六重点缓存自动失效，无需删除 Redis 中其他数据。
+PARSER_VERSION = "2026-10-13-focus-v2"
 _DENY_CACHE_REASONS = {"timeout", "llm_failed"}
 
 

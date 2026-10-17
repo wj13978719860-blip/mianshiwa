@@ -21,7 +21,7 @@ public final class WenjingRoutes {
             new Route("GET", "interview/sessions/" + SID + "/(question|metadata|setup-snapshot|report|replay|trace|resume)"),
             new Route("GET", "account/interview-sessions"));
     /** 由控制器单独接收文件后重新组装 multipart 转发。 */
-    public static final List<String> UPLOADS = Arrays.asList("interview/resume/parse-jobs", "interview/resume/parse");
+    public static final List<String> UPLOADS = Arrays.asList("interview/resume/parse-jobs", "interview/resume/parse", "interview/jd/extract");
     private static final Pattern QUERY = Pattern.compile("[A-Za-z0-9_=&.-]{0,256}");
 
     private WenjingRoutes() {

@@ -1099,9 +1099,8 @@ def _is_deduped(
     used_seed_ids: set[str],
     used_variant_ids: set[str],
 ) -> bool:
-    if intent == "opening":
-        return seed_id in used_seed_ids
-    return variant_id in used_variant_ids
+    # 同一考点的其他变体不能当作新题再次出场；真正追问沿用父题，不重新抽种子。
+    return seed_id in used_seed_ids or variant_id in used_variant_ids
 
 
 def _extract_used_question_refs(

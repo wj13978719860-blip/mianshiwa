@@ -108,6 +108,7 @@ from app.wenjing.engine.workflow.nodes.self_intro import SELF_INTRO_QUESTION
 from app.wenjing.models.auth import User
 from app.wenjing.models.base import get_session as get_db_session
 from app.wenjing.models.interview_session import InterviewSession
+from app.wenjing.services.resume_focus_history import load_focus_history
 from app.wenjing.services.interview_feedback import (
     FEEDBACK_OUTCOME_MAP,
     save_interview_feedback,
@@ -438,6 +439,8 @@ class JobSpecInput(BaseModel):
     required_skills: list[str] = Field(default_factory=list)
     rubric_dimensions: list[str] = Field(default_factory=list)
     rubric: dict[str, str] = Field(default_factory=dict)
+    # 保留用户确认的招聘要求，供出题节点理解岗位职责，而非只剩技能标签。
+    description: str = Field(default="", max_length=20_000)
     interview_industry: str | None = None
     interview_direction: str | None = None
     interview_direction_label: str | None = None
@@ -1183,6 +1186,30 @@ def _self_intro_history_payload(
         or ""
     ).strip()
     if not answer:
+        # 兼容旧版本跳过开场的 checkpoint：类型只保存在嵌套 current_question 中。
+        for item in values.get("qa_history") or []:
+            if not isinstance(item, dict):
+                continue
+            nested = item.get("current_question") or {}
+            if not isinstance(nested, dict):
+                nested = {}
+            if (
+                (item.get("question_type") or nested.get("question_type")) == "self_intro"
+                and item.get("answer_intent") == "skipped"
+            ):
+                return {
+                    "turn_idx": None,
+                    "question_type": "self_intro",
+                    "dimension": "communication",
+                    "question": str(item.get("question") or SELF_INTRO_QUESTION),
+                    "answer": "已跳过本题",
+                    "score": None,
+                    "passed": None,
+                    "rationale": "",
+                    "strengths": [],
+                    "weaknesses": [],
+                    "next_step": "",
+                }
         return None
     return {
         "turn_idx": None,
@@ -1254,7 +1281,12 @@ def _checkpoint_qa_history_payload(
     for item in raw_history:
         if not isinstance(item, dict):
             continue
-        if item.get("question_type") == "self_intro":
+        # 旧跳题节点没有顶层类型，必须从原题对象还原，不能默认成正式题。
+        nested = item.get("current_question") or {}
+        if not isinstance(nested, dict):
+            nested = {}
+        question_type = item.get("question_type") or nested.get("question_type") or "technical"
+        if question_type == "self_intro":
             continue
         turn_idx = _turn_idx_or_none(item.get("turn_idx"))
         if (
@@ -1271,7 +1303,7 @@ def _checkpoint_qa_history_payload(
         history.append(
             {
                 "turn_idx": turn_idx,
-                "question_type": item.get("question_type") or "technical",
+                "question_type": question_type,
                 "dimension": item.get("dimension"),
                 "question": question,
                 "answer": answer,
@@ -1534,6 +1566,8 @@ def start_session(req: StartSessionRequest, request: Request) -> dict[str, Any]:
         billing_mode=billing_mode,
     )
     owner_user_id = int(current_user.id) if current_user is not None else None
+    # 所有者来自网关认证，不接受客户端自报用户 ID；历史只用于重点轮换。
+    candidate["focus_history"] = load_focus_history(owner_user_id, session_id)
     owner_claimed_at = now if owner_user_id is not None else None
     session_token_expires_at = now + timedelta(
         hours=max(1, int(settings.session_token_ttl_hours))
@@ -2751,6 +2785,24 @@ class ParseJobSpecRequest(BaseModel):
     title: str | None = None
     level: str | None = None
     llm_config: LLMConfigOverride | None = None
+
+
+@router.post("/jd/extract")
+async def extract_jd_upload(request: Request, file: UploadFile = File(...)) -> dict[str, str]:
+    """JD 文件只提取文本；用户可检查文本后使用现有 JD 解析接口。"""
+    _enforce_setup_rate_limit(request, endpoint="jd_parse", limit=get_settings().jd_parse_rate_limit_per_minute)
+    raw = await _read_upload_limited(file)
+    try:
+        text = await asyncio.to_thread(
+            extract_text_with_timeout, filename=file.filename,
+            content_type=file.content_type, data=raw,
+        )
+    except (ResumeParseError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail="无法读取 JD 文件，请使用 PDF、DOCX、TXT 或 MD；扫描件请粘贴文字。") from exc
+    text = text.strip()
+    if not text or len(text) > 20_000:
+        raise HTTPException(status_code=422, detail="JD 内容为空或超过 20000 字，请检查后粘贴招聘要求。")
+    return {"text": text}
 
 
 @router.post("/jd/parse")

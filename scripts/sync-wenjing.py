@@ -65,6 +65,16 @@ ADAPTED = {
     "app/engine/workflow/nodes/experience_extractor.py",
     # 向量维度断言从 pgvector 列改为 ES 锚点索引。
     "tests/unit/test_session_anchor_chunk_model.py",
+    # 项目事实校验、重点轮换和同场去重是面试蛙的业务适配，后续同步不能覆盖。
+    "app/api/v1/interview.py",
+    "app/engine/resume_plan.py",
+    "app/services/resume_parser.py",
+    "app/services/question_selector.py",
+    "app/engine/agents/generator.py",
+    "app/engine/agents/prompts/generator_task.md",
+    "app/engine/workflow/nodes/ask_question.py",
+    "tests/unit/test_generator_fallback_quality.py",
+    "tests/unit/test_question_selector.py",
 }
 
 # 不同步的上游文件及原因，--check 时不报缺失。
@@ -77,6 +87,8 @@ EXCLUDED = {
 LOCAL_ONLY_PREFIXES = (
     "app/adapters/",
     "tests/adapters/",
+    "app/services/interview_quality.py",
+    "app/services/resume_focus_history.py",
 )
 
 SKIP_DIRS = {"__pycache__", ".pytest_cache", "webdemo"}

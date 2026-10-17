@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.wenjing.services.resume_focus_history import focus_history_key
+
 from app.wenjing.services.resume_parser import (
     normalise_resume_focus_dimensions,
     resume_focus_anchor_key,
@@ -284,12 +286,19 @@ def _anchor_from_focus(
         "project_name": project.get("name") or "",
         "role": project.get("role") or "",
         "tech_stack": _normalise_str_list(
-            project.get("tech_stack") or focus.get("skills")
+            focus.get("skills") or project.get("tech_stack")
         )[:8],
         "skills": _normalise_str_list(focus.get("skills"))[:8],
         "dimensions": dimensions,
-        "question_anchors": _normalise_str_list(project.get("question_anchors"))[:5],
-        "achievements": _normalise_str_list(project.get("achievements"))[:4],
+        # 当前重点是主锚点，其他项目事实只是背景，避免被同项目另一技术亮点吸走。
+        "question_anchors": [str(label)],
+        "achievements": [item for item in _normalise_str_list(project.get("achievements"))
+                         if _matches_any(item, _normalise_str_list(focus.get("skills")))] [:3],
+        "project_context": {
+            "tech_stack": _normalise_str_list(project.get("tech_stack"))[:8],
+            "responsibilities": _normalise_str_list(project.get("responsibilities"))[:5],
+            "achievements": _normalise_str_list(project.get("achievements"))[:5],
+        },
         "knowledge_source": "local",
     }
 
@@ -375,6 +384,8 @@ def select_resume_anchor_with_schedule(
         key=lambda f: _priority(f.get("priority")),
     )
     counts = _anchor_attempt_counts(qa_history)
+    history = candidate.get("focus_history") or {}
+    historical_counts = history.get("counts") or {}
 
     records: list[dict[str, Any]] = []
     for focus in ranked_focus:
@@ -403,6 +414,9 @@ def select_resume_anchor_with_schedule(
                 "attempts": attempts,
                 "max_attempts": max_attempts,
                 "high_value_reasons": high_value_reasons,
+                "historical_attempts": int(historical_counts.get(
+                    focus_history_key((project or {}).get("name"), focus.get("label")), 0
+                )),
                 "intro_match": bool(
                     intro_terms
                     and (
@@ -420,9 +434,12 @@ def select_resume_anchor_with_schedule(
     def choose(pool: list[dict[str, Any]], reason: str) -> dict[str, Any] | None:
         if not pool:
             return None
-        record = pool[0]
+        # 本场未覆盖和维度匹配仍优先；同一候选池内优先选跨场较少考察的重点。
+        record = min(pool, key=lambda item: (
+            item["historical_attempts"], item["attempts"], _priority(item["focus"].get("priority"))
+        ))
         anchor = _anchor_from_focus(record["focus"], record["project"])
-        return _selection_payload(
+        result = _selection_payload(
             anchor=anchor,
             depth=depth,
             attempts=int(record["attempts"]),
@@ -430,6 +447,9 @@ def select_resume_anchor_with_schedule(
             expansion_reason=reason,
             high_value_reasons=list(record["high_value_reasons"]),
         )
+        result["scheduler"]["historical_attempts"] = record["historical_attempts"]
+        result["scheduler"]["history_status"] = history.get("status", "not_loaded")
+        return result
 
     if intro_terms:
         selected = choose(

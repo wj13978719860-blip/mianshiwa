@@ -736,7 +736,8 @@ export function ResumeFocusSummary({
   focusAreas: ResumeFocusArea[];
   direction: SetupDirection;
 }) {
-  const visible = normaliseFocusAreas(focusAreas).slice(0, 6);
+  // 摘要亮点与完整重点池分开，展示可轮换的真实重点，避免用户只看到固定六项。
+  const visible = normaliseFocusAreas(focusAreas).slice(0, 12);
   if (visible.length === 0) {
     return (
       <div style={{ border: "1px solid #f0f0f0", background: "#fafafa", borderRadius: 6, padding: "8px 12px" }}>
@@ -765,7 +766,7 @@ export function ResumeFocusSummary({
     >
       <div style={{ marginBottom: 8 }}>
         <Text type="secondary" style={{ fontSize: 12 }}>
-          已根据简历项目生成重点。面试会优先从这些经历切入，基础题和算法题会作为补充。
+          已根据简历项目生成 {visible.length} 个重点。面试会结合岗位和历史考察记录选择重点，基础题和算法题作为补充。
         </Text>
       </div>
       <Flex wrap="wrap" gap={6}>

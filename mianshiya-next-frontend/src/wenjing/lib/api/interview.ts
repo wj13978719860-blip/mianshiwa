@@ -247,6 +247,13 @@ export function parseJobSpec(args: {
   });
 }
 
+/** JD 文件复用服务端的安全文本提取，原文先回填供用户核对。 */
+export function extractJobDescription(file: File): Promise<{ text: string }> {
+  const body = new FormData();
+  body.append("file", file);
+  return request(`${BASE}/jd/extract`, { method: "POST", body, timeoutMs: 30_000 });
+}
+
 /** Editable generic JD template for the selected setup direction. */
 export function getJobTemplate(args: {
   direction: string;

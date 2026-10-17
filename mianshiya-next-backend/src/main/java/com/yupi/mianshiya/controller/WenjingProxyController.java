@@ -6,6 +6,7 @@ import com.yupi.mianshiya.ai.AiRequestIdFilter;
 import com.yupi.mianshiya.ai.AiServiceProperties;
 import com.yupi.mianshiya.ai.WenjingRoutes;
 import com.yupi.mianshiya.ai.WenjingTransport;
+import com.yupi.mianshiya.ai.WenjingBlockedException;
 import com.yupi.mianshiya.model.entity.User;
 import com.yupi.mianshiya.service.UserService;
 import lombok.extern.slf4j.Slf4j;
@@ -73,8 +74,8 @@ public class WenjingProxyController {
         return forward(request, method, query == null ? path : path + "?" + query, headers, payload);
     }
 
-    /** 简历上传：Sa-Token 读参数会提前解析 multipart，这里接收文件后按上游表单（仅 file 字段）重新组装。 */
-    @PostMapping(value = {"/interview/resume/parse-jobs", "/interview/resume/parse"},
+    /** 简历/JD 上传：接收文件后按上游表单（仅 file 字段）重新组装，沿用登录鉴权。 */
+    @PostMapping(value = {"/interview/resume/parse-jobs", "/interview/resume/parse", "/interview/jd/extract"},
             consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<byte[]> upload(HttpServletRequest request, @RequestPart("file") MultipartFile file) {
         String path = relativePath(request);
@@ -86,7 +87,7 @@ public class WenjingProxyController {
         }
         String filename = safeFilename(file.getOriginalFilename());
         if (filename == null) {
-            return error(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "仅支持 PDF、DOCX、TXT、MD 简历");
+            return error(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "仅支持 PDF、DOCX、TXT、MD 文件");
         }
         Map<String, String> headers = baseHeaders(request);
         if (headers == null) {
@@ -97,7 +98,7 @@ public class WenjingProxyController {
         try {
             return forward(request, "POST", path, headers, multipart(boundary, filename, file));
         } catch (IOException e) {
-            return error(HttpStatus.BAD_REQUEST, "简历文件读取失败");
+            return error(HttpStatus.BAD_REQUEST, "上传文件读取失败");
         }
     }
 
@@ -114,6 +115,15 @@ public class WenjingProxyController {
             String type = reply.getContentType();
             out.set(HttpHeaders.CONTENT_TYPE, type == null ? MediaType.APPLICATION_JSON_VALUE : type);
             return new ResponseEntity<>(reply.getBody(), out, HttpStatus.valueOf(reply.getStatus()));
+        } catch (WenjingBlockedException e) {
+            // 拦截发生在向 Python 发请求之前，不伪装成已接收或生成成功。
+            String detail = e.isCircuitOpen() ? "面试服务暂不可用，请稍后重试" : "面试服务繁忙，请稍后重试";
+            ResponseEntity<byte[]> response = error(HttpStatus.SERVICE_UNAVAILABLE, detail + "，requestId=" + requestId);
+            HttpHeaders out = new HttpHeaders();
+            out.putAll(response.getHeaders());
+            out.set("Retry-After", "3");
+            out.setCacheControl("no-store");
+            return new ResponseEntity<>(response.getBody(), out, response.getStatusCode());
         } catch (Exception e) {
             log.warn("Wenjing bridge requestId={} type={}", requestId, e.getClass().getSimpleName());
             return error(HttpStatus.BAD_GATEWAY, "面试服务暂不可用，请稍后重试，requestId=" + requestId);

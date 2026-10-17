@@ -31,6 +31,26 @@ function loadTypeScript(filename) {
 
 const { mergeRestoredQaHistory, recordQaAnswer, qaEntryIdentity, restoredTurnToQaEntry } =
   loadTypeScript(path.join(frontendRoot, "src/wenjing/components/room/helpers.ts"));
+const { canStartWithJd, jdContextKey } = loadTypeScript(path.join(frontendRoot, "src/wenjing/lib/jd-setup.ts"));
+
+test("真实岗位模式必须完成当前 JD 的解析和确认；方向练习无需 JD", () => {
+  const currentKey = jdContextKey("Java 招聘要求", "java", "后端", "junior");
+  const ready = { targeted: true, uploading: false, status: "success", confirmed: true, parsedKey: currentKey, currentKey };
+  assert.equal(canStartWithJd(ready), true);
+  for (const change of [{ confirmed: false }, { uploading: true }, { status: "parsing" }, { status: "error" }, { parsedKey: null }]) {
+    assert.equal(canStartWithJd({ ...ready, ...change }), false);
+  }
+  assert.equal(canStartWithJd({ ...ready, targeted: false, parsedKey: null, confirmed: false }), true);
+});
+
+test("修改 JD、方向、岗位名称或级别，旧解析与旧确认均不能开始新面试", () => {
+  const original = ["Java 招聘要求", "java", "后端", "junior"];
+  const parsedKey = jdContextKey(...original);
+  for (let index = 0; index < original.length; index++) {
+    const changed = [...original]; changed[index] += "新值";
+    assert.equal(canStartWithJd({ targeted: true, uploading: false, status: "success", confirmed: true, parsedKey, currentKey: jdContextKey(...changed) }), false);
+  }
+});
 
 function entry(index, answer = `回答${index + 1}`) {
   return {

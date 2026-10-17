@@ -179,6 +179,15 @@ SDK 2.0.11 需要两处适配：gRPC 的空 namespace 规范化为 `public`；�
 
 ## 测试与故障复现
 
+面试出题质量校验默认开启（`ENABLE_INTERVIEW_QUALITY_GUARD=true`）：种子先做项目业务适配，生成后检查事实、语义重复、追问范围和评分条款。每题最多重写一次，审核异常改问已有事实的具体证据，并把状态写入 Trace。简历重点池最多 12 项；跨场轮换复用 MySQL 的已作答记录，按 Java 认证用户隔离，不添加数据库表。详见 [中文改造与验收记录](../docs/AI面试出题质量改造与验收.md)。
+
+新增质量回归（用受控模型和隔离 SQLite，显式启用新功能）：
+
+```powershell
+$env:PYTHONPATH = (Join-Path $PWD 'mianshiya-ai-service')
+./.runtime/ai-venv/Scripts/python.exe -m pytest mianshiya-ai-service/wenjing/tests/adapters/test_interview_quality.py -q -p no:cacheprovider
+```
+
 ```powershell
 ./scripts/prepare-ai-service.ps1 -Dev
 $env:PYTHONPATH = (Join-Path $PWD 'mianshiya-ai-service')
