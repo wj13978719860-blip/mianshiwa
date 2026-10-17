@@ -301,7 +301,7 @@ Pydantic 可以验证字段、类型、取值范围和部分字段关系。它�
 
 **A：** 本质上是通过 HTTP 通信，双方约定接口、JSON 结构、错误码和身份传递方式。Nacos 负责提供实例发现，Java 再选择实例转发请求。
 
-当前仓库中，主面试代理使用 `LoadBalancerClient` 配合 `HttpURLConnection` 的 transport；OpenFeign 用于内部探测和模型探测等接口。所以简历里“全部通过 OpenFeign 接入”描述过宽，应改成“通过 Nacos 服务发现和 HTTP 代理接入，部分内部接口使用 OpenFeign”。
+当前仓库中，主面试调用已统一为 OpenFeign：Java 校验登录后，通过 `WenjingFeignClient` 声明 GET、POST、DELETE 调用，由 Spring Cloud LoadBalancer 根据 Nacos 发现结果选择实例。面试客户端使用独立超时、内部凭证和禁止自动重试配置，外层保留 Sentinel 保护。探测和模型调试使用各自的 Feign 客户端配置。
 
 **追问：语言不同有影响吗？** 通信协议相同就可以互通，更需要关注接口兼容、超时、鉴权、错误处理和观测。
 
@@ -455,7 +455,7 @@ AI 可以帮助阅读代码、起草实现和测试，但我需要负责需求�
 
 | 当前表述或容易误说的内容 | 本次核验后的表达建议 |
 | --- | --- |
-| Python 面试请求全部通过 OpenFeign | Nacos 服务发现与 HTTP 代理接入；部分内部探测接口使用 OpenFeign |
+| Python 面试调用方式 | 已统一使用 OpenFeign，结合 Nacos / LoadBalancer；面试和探测的超时独立配置 |
 | 熔断后已经返回本地缓存 | 控制器当前 fallback 返回空结果；真正的缓存降级需要补实现或修改简历 |
 | 使用 async，所以等模型不占线程 | 当前同步模型调用占后台执行线程；HITL 等用户时暂停执行 |
 | 具备完整通用 RAG 技术知识库 | 具备检索链路和个人材料召回；通用资料规模与在线索引内容需实查 |
@@ -473,7 +473,7 @@ AI 可以帮助阅读代码、起草实现和测试，但我需要负责需求�
 - [通用知识导入](E:/project/mianshiya-next-master/mianshiya-ai-service/app/wenjing/engine/rag/ingestion.py)
 - [会话执行与 thread_id 配置](E:/project/mianshiya-next-master/mianshiya-ai-service/app/wenjing/services/session_manager.py)
 - [MySQL 检查点适配](E:/project/mianshiya-next-master/mianshiya-ai-service/app/wenjing/adapters/mysql.py)
-- [Java 面试 HTTP Transport](E:/project/mianshiya-next-master/mianshiya-next-backend/src/main/java/com/yupi/mianshiya/ai/LoadBalancedWenjingTransport.java)
+- [Java 面试 OpenFeign 接口](E:/project/mianshiya-next-master/mianshiya-next-backend/src/main/java/com/yupi/mianshiya/ai/WenjingFeignClient.java)
 - [题库接口缓存与 fallback](E:/project/mianshiya-next-master/mianshiya-next-backend/src/main/java/com/yupi/mianshiya/controller/QuestionBankController.java)
 - [出题质量改造和历史验证记录](E:/project/mianshiya-next-master/docs/AI面试出题质量改造与验收.md)
 

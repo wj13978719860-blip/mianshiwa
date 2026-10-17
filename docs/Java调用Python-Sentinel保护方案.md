@@ -14,11 +14,13 @@
 ```text
 登录校验和接口白名单
   → SentinelWenjingTransport：并发检查、熔断检查
-  → LoadBalancedWenjingTransport：Nacos 实例选择、带超时的 HTTP 调用
+  → FeignWenjingTransport → WenjingFeignClient：OpenFeign / LoadBalancer / Nacos 调用
   → Python
 ```
 
 通过 `@Primary` 装饰已有 `WenjingTransport`，底层服务发现、身份传递、JSON、上传和正常响应保持现有方式。该改动保护面试代理链路，不扩展到独立 Feign 探测接口。
+
+主面试 HTTP 发送现已统一为 OpenFeign：声明 GET、POST、DELETE 方法，移除手写 HttpURLConnection 发送器。面试专用配置继承内部凭证、关闭日志与自动重试，读取超时独立为 130 秒。JSON / multipart 已校验内容按原字节发送，返回 `feign.Response` 以保留 4xx/5xx 状态和正文；适配层保留 8 MB 响应上限并关闭响应流。AI 关闭时通过 ObjectProvider 延迟获取客户端。
 
 按操作分组，不把 session ID 或 query 放入资源名，避免高基数：
 
@@ -53,12 +55,12 @@
 
 ## 验证
 
-定向测试使用真实 Sentinel 规则和可控的传输替身，不连接数据库、Nacos 或真实模型。覆盖并发拒绝与释放、5xx 熔断与半开恢复、连接超时统计、4xx/429 透传、最小样本、规则保留、关闭开关、非法参数和控制器 503 契约。
+定向测试使用真实 Sentinel 规则、Feign 与 Spring MVC Contract，替换网络 Client，不连接数据库、Nacos 或真实模型。27 项定向测试通过，覆盖并发拒绝与释放、5xx 熔断与半开恢复、连接超时统计、4xx/429 透传、最小样本、规则保留、关闭开关、非法参数、控制器 503 契约，以及 Feign 路径/查询编码、JSON/文件原字节、身份头、超时、禁重试、DELETE 和响应流上限。
 
 使用 JDK 8，在 `mianshiya-next-backend` 运行：
 
 ```powershell
-& 'D:\devEnviroment\apache-maven-3.9.4\bin\mvn.cmd' -B -ntp '-Dtest=SentinelWenjingTransportTest,WenjingProxyControllerTest' test
+& 'D:\devEnviroment\apache-maven-3.9.4\bin\mvn.cmd' -B -ntp '-Dtest=FeignWenjingTransportTest,SentinelWenjingTransportTest,WenjingProxyControllerTest,AiModelContractTest' test
 ```
 
 测试日志写入项目 `target/sentinel-test-logs`，避免依赖用户目录权限。测试结果见执行后的 Surefire 报告；这类定向测试不等同于真实部署压测。

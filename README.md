@@ -33,7 +33,7 @@ AI 模拟面试已由独立 Python 服务替换，核心流程参考问镜。刷
 | 数据与中间件 | MySQL、Redis、Elasticsearch / ESVector、Nacos、Sentinel、etcd、HotKey |
 | 当前模型配置 | DeepSeek `deepseek-flash`；DashScope `text-embedding-v3`，1024 维 |
 
-面试请求由浏览器发送给 Java，Java 校验登录身份，通过 Nacos 发现 Python 实例并以 HTTP 转发。管理员探测与模型调试接口使用 OpenFeign。Java 保持 JDK 8，无需为 AI 服务升级到 JDK 17。
+面试请求由浏览器发送给 Java，Java 校验登录身份，通过 OpenFeign 调用 Python；Spring Cloud LoadBalancer 从 Nacos 发现结果中选择实例。主面试、管理员探测与模型调试均使用 OpenFeign，面试调用外层保留 Sentinel 并发保护和熔断。Java 保持 JDK 8，无需为 AI 服务升级到 JDK 17。
 
 问镜的会话与 Checkpoint 存在独立 MySQL 库，简历锚点与知识向量存入 ES，BM25 沿用问镜的 Python 实现。Redis 提供共享解析缓存和限流。
 

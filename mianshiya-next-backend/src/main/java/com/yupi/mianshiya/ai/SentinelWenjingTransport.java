@@ -33,7 +33,7 @@ public class SentinelWenjingTransport implements WenjingTransport, InitializingB
     private final WenjingProtectionProperties properties;
 
     public SentinelWenjingTransport(
-            @Qualifier("loadBalancedWenjingTransport") WenjingTransport delegate,
+            @Qualifier("feignWenjingTransport") WenjingTransport delegate,
             WenjingProtectionProperties properties) {
         this.delegate = delegate;
         this.properties = properties;

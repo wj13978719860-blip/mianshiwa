@@ -8,7 +8,7 @@
 
 最新数据、Redis 配置、草稿兼容影响与真实联调结果见 [文字面试补齐与验收](../docs/问镜文字面试补齐与验收.md)。本机已导入问镜自带的 162 个种子、324 个变体；公共知识文档仍缺资料，不把 ES 空索引冒充已启用的知识库。
 
-请求链路：浏览器 `/api/ai/wenjing/api/v1/**` → Java `WenjingProxyController`（白名单、注入 `X-Owner-Id` 与内部凭证、拒绝 `llm_config`）→ Python `/internal/wenjing/api/v1/**`。面试网关通过 Nacos 发现实例并以 HTTP 转发；管理员探测与模型调试使用 OpenFeign。当前只开放文字面试闭环：问镜自身的注册登录、管理端、语音、积分接口不挂载，登录沿用 Java。前端页面在 `mianshiya-next-frontend/src/app/interview/`，数据层 `src/wenjing/lib/` 由 `scripts/sync-wenjing-frontend.py` 从上游同步。BM25 保留问镜 Python 实现，ES 承接向量存储。
+请求链路：浏览器 `/api/ai/wenjing/api/v1/**` → Java `WenjingProxyController`（白名单、注入 `X-Owner-Id` 与内部凭证、拒绝 `llm_config`）→ Sentinel 保护 → OpenFeign → Python `/internal/wenjing/api/v1/**`。OpenFeign 通过 Spring Cloud LoadBalancer / Nacos 选择实例，管理员探测与模型调试也使用独立 Feign 客户端。当前只开放文字面试闭环：问镜自身的注册登录、管理端、语音、积分接口不挂载，登录沿用 Java。前端页面在 `mianshiya-next-frontend/src/app/interview/`，数据层 `src/wenjing/lib/` 由 `scripts/sync-wenjing-frontend.py` 从上游同步。BM25 保留问镜 Python 实现，ES 承接向量存储。
 
 在私有 `.runtime/ai-service.env` 配置 `.env.example` 中的 `WENJING_ENABLED`、`WENJING_MYSQL_DATABASE`、`AI_MYSQL_*`、`AI_ES_URL` 和 `EMBEDDING_*`，并启用已配置的对话模型。数据库需提前创建（utf8mb4_bin），账号只授予该库的 SELECT、INSERT、UPDATE、DELETE、CREATE、ALTER、INDEX、REFERENCES 权限；首次启动自动建表。
 
