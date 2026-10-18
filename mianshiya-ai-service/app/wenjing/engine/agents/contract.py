@@ -41,6 +41,8 @@ from app.wenjing.engine.context import (
 from app.wenjing.engine.workflow.difficulty_adapter import difficulty_to_bar_level
 
 from .llm_client import call_chat, parse_json_response
+from .output_schemas import ContractOutput
+from .structured_output import call_structured
 
 log = get_logger(__name__)
 
@@ -115,8 +117,8 @@ def negotiate_contract_via_evaluator(
     )
     messages = frame_to_contract_negotiator_messages(frame)
     try:
-        raw = call_chat(messages, json_mode=True, agent_role="contract_negotiator")
-        data = parse_json_response(raw)
+        data = call_structured(messages, schema=ContractOutput, call=call_chat,
+                               agent_role="contract_negotiator")
     except Exception as e:  # pragma: no cover - provider flakes
         log.warning("contract negotiation failed, falling back: %s", e)
         data = {}

@@ -44,6 +44,8 @@ from .llm_client import (
     parse_json_response,
 )
 from .prompts.loader import render_prompt as render_prompt
+from .output_schemas import GuardOutput
+from .structured_output import call_structured
 
 log = get_logger(__name__)
 
@@ -117,12 +119,13 @@ def classify(text: str, *, target_kind: TargetKind) -> GuardDecision:
     )
     messages = frame_to_guard_messages(frame)
     try:
-        raw = call_chat(
+        data = call_structured(
             messages,
+            schema=GuardOutput,
+            call=call_chat,
             json_mode=True,
             agent_role="guard",
         )
-        data = parse_json_response(raw)
     except Exception as e:  # pragma: no cover - provider flakes
         log.warning("guard_agent LLM call failed, degrading: %s", e)
         return GuardDecision.degraded(f"LLM error: {e}")
@@ -130,7 +133,7 @@ def classify(text: str, *, target_kind: TargetKind) -> GuardDecision:
     if not isinstance(data, dict) or not data:
         return GuardDecision.degraded("guard_agent reply was not a JSON object")
 
-    allowed = bool(data.get("allowed", True))
+    allowed = data["allowed"]
     categories = _coerce_categories(data.get("categories"))
     reasons = _coerce_reasons(data.get("reasons"))
     redacted = data.get("redacted_text") or ""

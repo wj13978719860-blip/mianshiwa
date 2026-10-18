@@ -28,6 +28,8 @@ from app.wenjing.engine.agents.llm_client import (
     parse_json_response,
 )
 from app.wenjing.engine.workflow.state import AskPlan
+from app.wenjing.engine.agents.output_schemas import AskPlanOutput
+from app.wenjing.engine.agents.structured_output import call_structured
 
 from .ask_plans import PLAN_TEMPLATES, build_default_plan
 
@@ -207,8 +209,8 @@ def build_llm_ask_plan(
         ),
     ]
     try:
-        raw = call_chat(messages, json_mode=True, agent_role="llm_planner")
-        data = parse_json_response(raw)
+        data = call_structured(messages, schema=AskPlanOutput, call=call_chat,
+                               agent_role="llm_planner")
     except Exception as e:  # pragma: no cover
         log.warning("llm_planner failed, falling back: %s", e)
         return None

@@ -317,7 +317,8 @@ def test_deepseek_thinking_switch_is_only_sent_when_requested(monkeypatch):
 
 def test_quality_reviewer_has_bounded_timeout_and_retries(monkeypatch):
     captured = []
-    monkeypatch.setattr(quality, "call_chat", lambda *_a, **kw: captured.append(kw) or '{}')
+    valid = '{"grounded":true,"duplicate":false,"focused_followup":true,"contract_aligned":true}'
+    monkeypatch.setattr(quality, "call_chat", lambda *_a, **kw: captured.append(kw) or valid)
     quality._review("检查", {})
     assert captured[0]["request_timeout"] == 15
     assert captured[0]["max_retries"] == 0

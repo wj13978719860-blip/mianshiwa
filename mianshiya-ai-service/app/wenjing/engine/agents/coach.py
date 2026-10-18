@@ -30,6 +30,8 @@ from app.wenjing.engine.context import (
 )
 
 from .llm_client import LLMOutputTruncated, call_chat, parse_json_response
+from .output_schemas import TrainingPlanOutput
+from .structured_output import StructuredOutputError, call_structured
 
 log = get_logger(__name__)
 
@@ -642,35 +644,24 @@ def build_training_plan(
         verification_summary=verification,
     )
     messages = frame_to_coach_messages(frame)
-    last_reason = "json_parse_failed"
-    for attempt in range(2):
-        try:
-            raw = call_chat(
-                messages,
-                json_mode=True,
-                agent_role="coach",
-                max_tokens=get_settings().coach_llm_max_tokens,
-            )
-        except Exception as e:  # pragma: no cover
-            log.warning("coach LLM call failed, using fallback: %s", e)
-            return _fallback_with_reason(
-                reason="output_truncated" if isinstance(e, LLMOutputTruncated) else "llm_call_failed",
-                final_report=coach_report,
-                qa_history=qa_history,
-            )
-
-        data, reason = _decode_llm_training_plan(raw)
-        if data is not None:
-            data = _normalize_llm_plan(data)
-            data.setdefault("source", "llm")
-            return data
-
-        last_reason = reason
-        if attempt == 0:
-            log.info("coach LLM output invalid (%s), retrying once", reason)
-
-    return _fallback_with_reason(
-        reason=last_reason,
-        final_report=coach_report,
-        qa_history=qa_history,
-    )
+    try:
+        data = call_structured(
+            messages, schema=TrainingPlanOutput, call=call_chat,
+            agent_role="coach", max_tokens=get_settings().coach_llm_max_tokens,
+        )
+    except StructuredOutputError as exc:
+        return _fallback_with_reason(
+            reason={"empty_output": "empty_output", "invalid_json": "json_parse_failed"}.get(
+                exc.reason, "invalid_structure"
+            ),
+            final_report=coach_report, qa_history=qa_history,
+        )
+    except Exception as exc:  # pragma: no cover - transport failures
+        log.warning("coach LLM call failed, using fallback: %s", exc)
+        return _fallback_with_reason(
+            reason="output_truncated" if isinstance(exc, LLMOutputTruncated) else "llm_call_failed",
+            final_report=coach_report, qa_history=qa_history,
+        )
+    data = _normalize_llm_plan(data)
+    data.setdefault("source", "llm")
+    return data

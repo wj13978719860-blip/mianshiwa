@@ -94,6 +94,9 @@ class Settings(BaseSettings):
     # over responsiveness.
     # ------------------------------------------------------------------
     llm_max_retries: int = 0
+    # Schema repair has its own bounded budget; nested transport retries are off.
+    structured_output_max_retries: int = Field(default=1, ge=0, le=2)
+    structured_output_timeout_seconds: float = Field(default=90.0, gt=0, le=300)
     llm_retry_backoff_seconds: float = 0.5
     llm_retry_backoff_cap_seconds: float = 2.0
     # Network timeout passed to provider SDK clients. The app already

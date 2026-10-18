@@ -33,6 +33,8 @@ from typing import Any
 from app.wenjing.core.logging import get_logger
 
 from .llm_client import call_chat, parse_json_response
+from .output_schemas import SummaryOutput
+from .structured_output import call_structured
 
 # NOTE: ``app.engine.context`` imports ``app.engine.context.history``
 # from its ``__init__.py``, which in turn imports ``format_summary_for_prompt``
@@ -143,8 +145,8 @@ def summarise_session(
     )
     messages = frame_to_session_summarizer_messages(frame)
     try:
-        raw = call_chat(messages, json_mode=True, agent_role="session_summarizer")
-        data = parse_json_response(raw)
+        data = call_structured(messages, schema=SummaryOutput, call=call_chat,
+                               agent_role="session_summarizer")
     except Exception as e:  # pragma: no cover - provider flakes
         log.warning("session_summarizer LLM call failed, keeping prior summary: %s", e)
         return existing_summary

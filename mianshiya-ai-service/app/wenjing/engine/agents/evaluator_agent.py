@@ -23,10 +23,9 @@ accepted:
 2. ``{"verdict": "..."}`` - evidence becomes an empty list.
 3. ``{"verdict": "...", "evidence": [str, ...]}`` - full new shape.
 
-Invalid verdicts degrade to ``"no"``; non-list evidence is dropped.
-Older snapshots in the DB / trainset are NEVER rewritten; only new
-evaluations emit the full dict shape. Downstream code must therefore
-treat either a string OR a dict as valid.
+Fresh responses are schema-validated and malformed fields trigger bounded
+repair. The normalisers remain tolerant when reading historical snapshots;
+older checkpoints and training data are never rewritten.
 """
 from __future__ import annotations
 
@@ -42,6 +41,8 @@ from app.wenjing.engine.context import (
 )
 
 from .llm_client import call_chat, classify_llm_error_kind, parse_json_response
+from .output_schemas import EvaluationOutput
+from .structured_output import StructuredOutputError, call_structured
 
 log = get_logger(__name__)
 
@@ -350,8 +351,6 @@ def _fallback_evaluation(
     evaluation that preserves the transcript and asks for one more simple
     follow-up.
     """
-    score = 5.0 if len(answer.strip()) < 40 else min(6.5, quality_threshold - 0.5)
-    score = max(0.0, round(float(score), 2))
     acceptance = _fallback_acceptance_check_results(
         contract=contract,
         answer=answer,
@@ -360,9 +359,10 @@ def _fallback_evaluation(
     coverage = _derive_rubric_coverage(contract, acceptance, rubric_points)
     return {
         "source": "fallback",
-        "fallback_reason": "llm_failed",
-        "error_kind": classify_llm_error_kind(exc),
-        "score": score,
+        "fallback_reason": "structured_output_invalid" if isinstance(exc, StructuredOutputError) else "llm_failed",
+        "error_kind": "structured_output" if isinstance(exc, StructuredOutputError) else classify_llm_error_kind(exc),
+        "score": None,
+        "evaluation_status": "unavailable",
         "passed": False,
         "strengths": ["本轮回答已记录到面试 transcript 中。"],
         "weaknesses": [],
@@ -389,12 +389,13 @@ def evaluate_answer(
     drift_negatives: str = "",
     video_signals: dict[str, Any] | None = None,
     context_flags: dict[str, Any] | None = None,
+    validation_retries: int | None = None,
 ) -> dict[str, Any]:
     """Return the structured evaluation payload.
 
     The function never raises on unparsable LLM output; it degrades
-    gracefully to a neutral 5/10 with empty coverage so the graph
-    keeps flowing rather than deadlocking.
+    to an explicitly unavailable evaluation with no score, so a model
+    failure does not become a fabricated grade.
 
     ``contract`` is the co-signed :class:`PlanContract`. Older callers
     can still pass only ``rubric_points`` - in that case the
@@ -446,8 +447,11 @@ def evaluate_answer(
         or getattr(settings, "llm_max_tokens", 2048)
     )
     try:
-        raw = call_chat(
+        data = call_structured(
             messages,
+            schema=EvaluationOutput,
+            call=call_chat,
+            validation_retries=validation_retries,
             json_mode=True,
             agent_role="evaluator",
             max_tokens=evaluator_max_tokens,
@@ -466,12 +470,7 @@ def evaluate_answer(
             quality_threshold=quality_threshold,
             enable_spans=enable_spans,
         )
-    data = parse_json_response(raw)
-
-    try:
-        score = float(data.get("score", 5.0))
-    except (TypeError, ValueError):
-        score = 5.0
+    score = data["score"]
 
     # Evidence-span alignment is additive. When enabled, the
     # per-check normaliser also emits an ``evidence_spans`` list aligned

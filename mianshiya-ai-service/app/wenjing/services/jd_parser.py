@@ -354,8 +354,13 @@ def _llm_refine(
         ),
     ]
     try:
-        raw = call_chat(
+        from app.wenjing.engine.agents.output_schemas import JobOutput
+        from app.wenjing.engine.agents.structured_output import call_structured
+
+        parsed = call_structured(
             messages,
+            schema=JobOutput,
+            call=call_chat,
             json_mode=True,
             temperature=0.1,
             agent_role="jd_parser",
@@ -363,7 +368,6 @@ def _llm_refine(
     except Exception as e:
         log.warning("jd_parser: LLM call failed, falling back to heuristic: %s", e)
         return {}
-    parsed = parse_json_response(raw)
     return parsed if isinstance(parsed, dict) else {}
 
 

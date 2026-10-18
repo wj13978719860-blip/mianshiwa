@@ -1744,8 +1744,14 @@ def _llm_refine(
         ),
     ]
     try:
-        raw = call_chat(
+        from app.wenjing.engine.agents.output_schemas import ResumeOutput
+        from app.wenjing.engine.agents.structured_output import call_structured
+
+        parsed = call_structured(
             messages,
+            schema=ResumeOutput,
+            call=call_chat,
+            repair_json=_repair_truncated_json_object,
             json_mode=True,
             temperature=0.1,
             max_tokens=LLM_REFINE_MAX_OUTPUT_TOKENS,
@@ -1771,12 +1777,6 @@ def _llm_refine(
             safe_error,
         )
         return {}
-    parsed = parse_json_response(raw)
-    if not isinstance(parsed, dict) or not parsed:
-        repaired = _repair_truncated_json_object(raw)
-        if repaired:
-            log.warning("resume_parser: repaired malformed LLM JSON response")
-            parsed = repaired
     if not isinstance(parsed, dict):
         return {}
     return parsed

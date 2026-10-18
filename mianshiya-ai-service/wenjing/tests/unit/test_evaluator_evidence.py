@@ -362,10 +362,10 @@ def test_evaluate_answer_upgrades_legacy_string_shape(monkeypatch) -> None:
     _assert_check_core(acceptance["Mentions risks."], verdict="partial", evidence=[])
 
 
-def test_evaluate_answer_mixed_shape_response(monkeypatch) -> None:
-    """Some providers mix shapes in a single JSON blob (e.g. when
-    the prompt partially converts during a rollout). Every entry
-    must come out canonical.
+def test_evaluate_answer_rejects_malformed_check_in_mixed_response(monkeypatch) -> None:
+    """Fresh malformed evidence now requires repair, not a fabricated verdict.
+
+    Historical checkpoints remain readable by _normalize_check_result.
     """
 
     def fake_call(messages, *, json_mode=False, **kwargs):  # type: ignore[no-untyped-def]
@@ -392,11 +392,9 @@ def test_evaluate_answer_mixed_shape_response(monkeypatch) -> None:
         quality_threshold=7.0,
     )
 
-    acceptance = result["acceptance_check_results"]
-    _assert_check_core(acceptance["CheckA"], verdict="yes", evidence=[])
-    _assert_check_core(acceptance["CheckB"], verdict="partial", evidence=["quote B"])
-    # Invalid verdict collapses to "no"; non-list evidence drops.
-    _assert_check_core(acceptance["CheckC"], verdict="no", evidence=[])
+    assert result["fallback_reason"] == "structured_output_invalid"
+    assert result["score"] is None
+    assert result["evaluation_status"] == "unavailable"
 
 
 def test_evaluate_answer_synthesises_canonical_fallback_when_llm_silent(

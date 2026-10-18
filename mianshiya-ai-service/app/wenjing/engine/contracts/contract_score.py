@@ -61,6 +61,12 @@ def build_contract_score_shadow(
     """
 
     payload = dict(evaluation or {})
+    from app.wenjing.engine.workflow.eval_helpers import is_evaluator_fallback
+
+    if is_evaluator_fallback(payload):
+        # Synthetic missing/partial checks are not evidence of user ability.
+        # Even contract/hybrid modes must not manufacture a grade from them.
+        payload = {"score": None, "acceptance_check_result_items": [], "rubric_coverage": {}}
     llm_score = _score_or_none(payload.get("llm_score"))
     if llm_score is None:
         llm_score = _score_or_none(payload.get("score"))

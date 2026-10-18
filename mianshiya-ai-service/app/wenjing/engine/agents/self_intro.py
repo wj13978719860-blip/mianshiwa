@@ -10,6 +10,8 @@ from app.wenjing.core.settings import get_settings
 from app.wenjing.services.resume_chunker import extract_tech_keywords
 
 from .llm_client import ChatMessage, call_chat, parse_json_response
+from .output_schemas import SelfIntroOutput
+from .structured_output import call_structured
 
 log = get_logger(__name__)
 
@@ -621,11 +623,13 @@ def parse_self_intro_profile(
         f"SELF_INTRO={answer or ''}"
     )
     try:
-        raw = call_chat(
+        data = call_structured(
             [
                 ChatMessage("system", _SYSTEM),
                 ChatMessage("user", prompt),
             ],
+            schema=SelfIntroOutput,
+            call=call_chat,
             json_mode=True,
             temperature=0.1,
             max_tokens=800,
@@ -633,7 +637,6 @@ def parse_self_intro_profile(
             provider_max_retries=0,
             agent_role="self_intro_parser",
         )
-        data = parse_json_response(raw)
         if not isinstance(data, dict) or not data:
             return fallback
         return _clean_profile(

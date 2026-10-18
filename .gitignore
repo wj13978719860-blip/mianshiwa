@@ -169,3 +169,6 @@ mianshiya-ai-service/wenjing/.pytest_cache/
 mianshiya-next-frontend/.next-build-check/
 # pytest 产生的临时工作目录可能含测试数据与沙箱权限文件，不发布。
 **/pytest-cache-files-*/
+
+# 个人简历与面试准备文档仅保留在本地。
+/docs/韦杰-*

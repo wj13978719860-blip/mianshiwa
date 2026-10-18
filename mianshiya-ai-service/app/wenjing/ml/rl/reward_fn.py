@@ -123,6 +123,10 @@ def immediate_reward(
       raw score stayed high.
     """
     s = get_settings()
+    from app.wenjing.engine.workflow.eval_helpers import is_evaluator_fallback
+
+    if is_evaluator_fallback(evaluation):
+        return 0.0
     score = float(evaluation.get("score", 0.0))
     base = max(0.0, min(1.0, score / MAX_SCORE))
     if evaluation.get("passed"):

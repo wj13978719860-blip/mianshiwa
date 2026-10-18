@@ -475,8 +475,8 @@ def test_llm_planner_accepts_skill_and_candidate_anchor_steps(monkeypatch):
         ],
     }
 
-    monkeypatch.setattr(llm_planner_mod, "call_chat", lambda *_args, **_kw: "{}")
-    monkeypatch.setattr(llm_planner_mod, "parse_json_response", lambda _raw: raw_plan)
+    import json
+    monkeypatch.setattr(llm_planner_mod, "call_chat", lambda *_args, **_kw: json.dumps(raw_plan))
 
     plan = llm_planner_mod.build_llm_ask_plan(
         dimension="system_design",

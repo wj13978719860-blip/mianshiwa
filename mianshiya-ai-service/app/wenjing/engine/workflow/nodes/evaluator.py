@@ -87,6 +87,7 @@ def _evaluate_answer_once(
     drift_negatives: str,
     video_signals: Any,
     context_flags: dict[str, Any],
+    validation_retries: int | None = None,
 ) -> dict[str, Any]:
     evaluation = evaluate_answer(
         dimension=dimension,
@@ -98,6 +99,7 @@ def _evaluate_answer_once(
         drift_negatives=drift_negatives,
         video_signals=video_signals,
         context_flags=context_flags,
+        validation_retries=validation_retries,
     )
     evaluation["acceptance_check_result_items"] = join_acceptance_check_results(
         runtime_contract or {},
@@ -179,6 +181,7 @@ def evaluator_node(state: InterviewState) -> dict[str, Any]:
     )
     if quality_warning:
         retry_evaluation = _evaluate_answer_once(
+            validation_retries=0,
             dimension=dimension,
             question=question,
             answer=raw_answer,
@@ -325,7 +328,7 @@ def evaluator_node(state: InterviewState) -> dict[str, Any]:
     preview_reward = immediate_reward(evaluation=evaluation, contract=contract)
 
     log.info(
-        "evaluator turn=%d dim=%s score=%.2f passed=%s preview_reward=%.2f budget_left=%d",
+        "evaluator turn=%d dim=%s score=%s passed=%s preview_reward=%.2f budget_left=%d",
         turn_idx,
         dimension,
         evaluation.get("score", 0),

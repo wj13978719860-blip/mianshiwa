@@ -30,6 +30,8 @@ from app.wenjing.engine.context import (
 )
 
 from .llm_client import call_chat, parse_json_response
+from .output_schemas import VerificationOutput
+from .structured_output import call_structured
 
 log = get_logger(__name__)
 
@@ -100,8 +102,8 @@ def verify_answer(
     )
     messages = frame_to_verifier_messages(frame)
     try:
-        raw = call_chat(messages, json_mode=True, agent_role="verifier")
-        data = parse_json_response(raw)
+        data = call_structured(messages, schema=VerificationOutput, call=call_chat,
+                               agent_role="verifier")
     except Exception as e:  # pragma: no cover
         log.warning("verifier call failed, degrading: %s", e)
         return _default_verdict(evaluator_report)

@@ -218,6 +218,25 @@ $env:PYTHONPATH = (Join-Path $PWD 'mianshiya-ai-service')
 
 这份备份只存在于实施机器。其他环境部署前也需保留自己的基线产物、配置和 Git 版本。源码回退应从已记录基线另建 checkout 构建，不覆盖后续改动，不重置数据库或中间件数据卷。
 
+## 模型结构化输出校验
+
+面试的评分、出题与评分要求、核验、安全检查、简历/JD/自我介绍解析、
+执行计划和训练计划，通过 Pydantic v2 校验模型输出。实现参考
+[Instructor 的校验错误反馈与有限重试](https://github.com/567-labs/instructor/blob/main/docs/concepts/retrying.md)，
+复用现有模型调用入口，不引入另一套 Agent 运行时。
+
+- 分数必须是 0～10 的有限数字；`"优秀"`、数字字符串、布尔值、NaN 和无穷大不会作为分数接收。
+- 布尔值必须是 JSON `true/false`，列表必须是真正的数组，禁止用 `bool("false")` 或 `list("考点")` 隐式转换。
+- 默认额外纠正一次，将字段校验错误反馈给模型；`STRUCTURED_OUTPUT_MAX_RETRIES` 可设为 0～2。
+  `STRUCTURED_OUTPUT_TIMEOUT_SECONDS` 默认 90 秒，各次请求共享该时间预算并保留更短的节点超时。
+  同步 SDK 超时不等于精确的强制中断，真实耗时仍受供应商响应和清理行为影响。
+- 校验循环关闭应用与 SDK 的网络重试，网络错误直接交给原有降级逻辑；已有题目改写/审核不再嵌套格式重试。
+- 纠正耗尽时按业务降级：评价标记 `evaluation_status=unavailable`、`score=null`，保留回答，
+  不更新维度成绩或策略奖励；出题走现有种子/证据兜底，解析回退规则结果，执行计划回退默认模板。
+- 新响应严格校验，历史检查点仍由现有兼容读取逻辑处理；简历截断 JSON 的恢复结果也必须经过 Schema 校验。
+
+Schema 只保证格式、类型和范围，不能证明技术判断或评分本身正确。
+
 ## 问镜的向量配置
 
 问镜的知识库和简历锚点向量写入 ES，Embedding 使用 OpenAI 兼容接口（默认 DashScope `text-embedding-v3`，1024 维）。索引名带维度后缀，维度变更会写入新索引而不是覆盖旧映射。未配置 `AI_ES_URL` 时（单测/开发）锚点向量只保存在进程内存里，生产启动会直接失败。

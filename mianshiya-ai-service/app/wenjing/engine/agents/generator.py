@@ -34,6 +34,8 @@ from app.wenjing.engine.context import (
 from app.wenjing.memory.strategy_store import build_strategy_index as build_strategy_index
 
 from .llm_client import ChatMessage, call_chat, parse_json_response
+from .output_schemas import QuestionOutput, ContractOutput
+from .structured_output import StructuredOutputError, call_structured
 from app.wenjing.services.interview_quality import (
     evidence_fallback, followup_gap, review_generated_question,
 )
@@ -453,8 +455,12 @@ def generate_question(
         history_section_override=history_section_override,
     )
     messages = frame_to_generator_messages(frame)
-    raw = call_chat(messages, json_mode=True, agent_role="generator")
-    data = parse_json_response(raw)
+    try:
+        data = call_structured(messages, schema=QuestionOutput, call=call_chat,
+                               agent_role="generator")
+    except StructuredOutputError:
+        # Preserve the existing seed/evidence question fallback, not malformed data.
+        data = {}
     from app.wenjing.engine.workflow.difficulty_adapter import difficulty_to_bar_level
 
     rubric_points = data.get("rubric_points") or ["depth", "clarity"]
@@ -542,9 +548,10 @@ def generate_question(
                         "如果是追问，保持上一题场景，只问一个缺口：" + gap
                         + "。重新输出完整问题及与问题一致的 proposed_contract。审核原因："
                         + str(review.get("reason") or "题目不符合事实或重复"))]
-                    revised = parse_json_response(call_chat(
-                        rewrite_messages, json_mode=True, agent_role="generator",
-                    ))
+                    revised = call_structured(
+                        rewrite_messages, schema=QuestionOutput, call=call_chat,
+                        validation_retries=0, agent_role="generator",
+                    )
                     if not isinstance(revised.get("question"), str) or not revised["question"].strip():
                         raise ValueError("quality_rewrite_empty")
                     question["question"] = revised["question"].strip()
@@ -620,8 +627,11 @@ def negotiate_rubric(
         ChatMessage("system", "You co-design interview rubrics with another agent."),
         ChatMessage("user", _RUBRIC_NEG_TASK.format(dimension=dimension, question=question)),
     ]
-    raw = call_chat(messages, json_mode=True, agent_role="rubric_negotiator")
-    data = parse_json_response(raw)
+    try:
+        data = call_structured(messages, schema=ContractOutput, call=call_chat,
+                               agent_role="rubric_negotiator")
+    except StructuredOutputError:
+        data = {}
     return {
         "rubric_points": data.get("rubric_points") or ["depth", "clarity"],
         "minimum_bar": data.get("minimum_bar", "Covers the core concept with one concrete example."),
